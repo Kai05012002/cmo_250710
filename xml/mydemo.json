@@ -1,0 +1,82 @@
+{
+    "Scenario": {
+        "Title": "MyScenario1",  // 標題
+        "FileName": "MyScenario1.scen",  // 檔案名稱
+        "Time": 1739736000,  // 當前時間 (Unix 時間戳)
+        "StartTime": 1739735527,  // 開始時間 (Unix 時間戳)
+        "ZeroHour": 1739735527,  // 零時 (Unix 時間戳)
+        "Duration": 86400,  // 持續時間 (秒)
+        "SaveVersion": "Command: Modern Operations v1.07 - Build 1527",  // 存檔版本
+        "CampaignScore": 0,  // 戰役分數
+        "HasStarted": true,  // 是否已開始
+        "Status": "Running",  // 狀態 (運行中)
+        "TimeCompression": 5,  // 時間壓縮倍率
+        "GameStatus": 0,  // 遊戲狀態
+        "Sides": [  // 勢力 (各方參與勢力)
+            {
+                "ID": "0YS6W7-0HNAENMQ57CAV",  // 勢力 ID
+                "Name": "Taiwan",  // 勢力名稱 (台灣)
+                "TotalScore": 0,  // 總分數
+                "Contacts": [  // 已知聯繫目標
+                    {
+                        "ID": "0YS6W7-0HNAK6E3KERJ8",  // 目標 ID
+                        "Name": "enemy1",  // 目標名稱 (敵方1)
+                        "Type": "Surface",  // 目標類型 (水面艦)
+                        "CA": 0.0,  // 偵測確定度 (0.0 表示剛偵測到)
+                        "Lat        ": 24.122264134342,  // 緯度
+                        "Lon": 122.37550468471  // 經度
+                    }
+                ]
+            },
+            {
+                "ID": "0YS6W7-0HNAENMQ57CB1",
+                "Name": "enemy",  // 勢力名稱 (敵方)
+                "TotalScore": 0,
+                "Contacts": [
+                    {
+                        "ID": "0YS6W7-0HNAK6E3KES36",
+                        "Name": "FFG #1",  // 目標名稱 (護衛艦 #1)
+                        "Type": "Surface",
+                        "CA": 0.0,
+                        "Lat": 24.092646154178,
+                        "Lon": 122.34496399448
+                    }
+                ]
+            }
+        ],
+        "ActiveUnits": [  // 活躍單位 (當前場景中的所有單位)
+            {
+                "ID": "0YS6W7-0HNAENMQ57D2M",  // 單位 ID
+                "DBID": 649,  // 資料庫 ID
+                "Name": "Cheng Kung",  // 單位名稱 (成功級巡防艦)
+                "Side": "Taiwan",  // 所屬勢力 (台灣)
+                "ClassName": "1101 Cheng Kung [Perry Class, Kuang Hua I]",  // 艦船類型 (成功級 [佩里級, 光華一號])
+                "Proficiency": "Regular",  // 訓練等級 (普通)
+                "Lat": 24.092981292049,  // 緯度
+                "Lon": 122.34531578858,  // 經度
+                "CA": 0.0,  // 偵測確定度
+                "CH": 43.253692626953,  // 高度 (海面單位應為 0 或接近 0)
+                "CS": 20.0,  // 速度 (節)
+                "Thr": "Cruise: 2",  // 油門設定 (巡航: 2)
+                "FuelState": "None",  // 燃料狀態 (無)
+                "WeaponState": "None"  // 武器狀態 (無)
+            },
+            {
+                "ID": "0YS6W7-0HNAEPMM3PQOG",
+                "DBID": 4632,
+                "Name": "enemy1",  // 單位名稱 (敵方1)
+                "Side": "enemy",  // 所屬勢力 (敵方)
+                "ClassName": "865 Zhuanghe",  // 艦船類型 (865 莊河級)
+                "Proficiency": "Regular",
+                "Lat": 24.122280389213,
+                "Lon": 122.3755217296,
+                "CA": 0.0,
+                "CH": 0.0,
+                "CS": 0.0,
+                "Thr": "FullStop: 0",  // 油門設定 (完全停止)
+                "FuelState": "None",
+                "WeaponState": "None"
+            }
+        ]
+    }
+}

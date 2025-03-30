@@ -1,0 +1,1 @@
+ScenEdit_SetUnit({side = 'South Korea', name = 'ROKS Wang Geon', course = {{longitude = 124.66789539118403, latitude = 36.80370989256334, TypeOf = 'ManualPlottedCourseWaypoint'}}})

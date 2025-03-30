@@ -1,0 +1,1 @@
+ScenEdit_SetUnit({side = 'Israel', name = 'Sufa #1', course = {{longitude = 36.76564449891514, latitude = 33.57541448955336, TypeOf = 'ManualPlottedCourseWaypoint'}}})

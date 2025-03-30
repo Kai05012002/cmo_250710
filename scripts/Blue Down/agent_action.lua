@@ -1,0 +1,1 @@
+ScenEdit_SetUnit({side = 'Taiwan', name = 'Cheng Kung', course = {{longitude = 122.41646070575999, latitude = 24.164974415792003, TypeOf = 'ManualPlottedCourseWaypoint'}}})
