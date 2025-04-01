@@ -47,8 +47,13 @@ class MyAgent(BaseAgent):
         self.input_size = 6  # [B_lon, B_lat, B_heading, B_speed, A_lon, A_lat]
         self.hidden_size = 64
         self.num_actions = 4  # 上下左右
-        self.model = DQN(self.input_size, self.hidden_size, self.num_actions)
-        self.target_model = DQN(self.input_size, self.hidden_size, self.num_actions)
+        
+        # 檢查CUDA是否可用
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.logger.info(f"使用設備: {self.device}")
+        
+        self.model = DQN(self.input_size, self.hidden_size, self.num_actions).to(self.device)
+        self.target_model = DQN(self.input_size, self.hidden_size, self.num_actions).to(self.device)
         self.target_model.load_state_dict(self.model.state_dict())
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         self.memory = deque(maxlen=10000)
@@ -126,7 +131,7 @@ class MyAgent(BaseAgent):
         self.logger.debug("訓練完成")
         
         # 選擇動作
-        state_tensor = torch.tensor([current_state], dtype=torch.float32)
+        state_tensor = torch.tensor([current_state], dtype=torch.float32).to(self.device)
         with torch.no_grad():
             q_values = self.model(state_tensor)
         if random.random() < self.epsilon:
@@ -134,7 +139,7 @@ class MyAgent(BaseAgent):
             self.logger.debug(f"隨機選擇動作: {action}")
         else:
             action = q_values.argmax().item()
-            self.logger.debug(f"根據Q值選擇動作: {action}, Q值: {q_values.numpy()}")
+            self.logger.debug(f"根據Q值選擇動作: {action}, Q值: {q_values}")
         
         # 執行動作
         action_cmd = self.apply_action(action, ac)
@@ -253,11 +258,11 @@ class MyAgent(BaseAgent):
             batch = random.sample(self.memory, self.batch_size)
             states, actions, rewards, next_states, dones = zip(*batch)
             
-            states = torch.tensor(states, dtype=torch.float32)
-            actions = torch.tensor(actions, dtype=torch.long).unsqueeze(1)
-            rewards = torch.tensor(rewards, dtype=torch.float32)
-            next_states = torch.tensor(next_states, dtype=torch.float32)
-            dones = torch.tensor(dones, dtype=torch.float32)
+            states = torch.tensor(states, dtype=torch.float32).to(self.device)
+            actions = torch.tensor(actions, dtype=torch.long).unsqueeze(1).to(self.device)
+            rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+            next_states = torch.tensor(next_states, dtype=torch.float32).to(self.device)
+            dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
             
             current_q = self.model(states).gather(1, actions)
             next_q = self.target_model(next_states).max(1)[0]

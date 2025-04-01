@@ -270,7 +270,7 @@ class CMOEnv():
         self._setup_inst_watcher()
         
         self.inst_changed = False
-
+        self.check_inst_changed(callback=self.on_inst_changed)
         # per comment (https://github.com/duyminh1998/pycmo/issues/25#issuecomment-1817773399) on issue #25, we need to edit the *_scen_has_ended.inst file when we init the env that the scenario has ended?
         with open(self.scen_ended, 'r') as file:
             data = file.readlines()
@@ -313,7 +313,7 @@ class CMOEnv():
             raise FileNotFoundError("Cannot find scen_has_ended.txt.")
     
     def step(self, action=None) -> TimeStep:
-        self.check_inst_changed(callback=self.on_inst_changed)
+        
         self.inst_changed = False
         # make sure the game is paused when step is called
         # while self.step_id > 0 and not self.check_game_ended(): ...

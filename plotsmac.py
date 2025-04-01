@@ -133,14 +133,16 @@ def create_dynamic_window(data_list, keys, name_list, battle_name):
 # 使用者選擇要繪製的數據
 file_paths = [
               'logs/run_20250327_173035/stats.json',
-              'logs/run_20250330_235037/stats.json',
+              'logs/run_20250330_235037_CPU_4X/stats.json',
+              'logs/run_20250402_013318_GPU_5X/stats.json'
               ]
 
 data_list = load_data(file_paths)
 selected_keys = ['distance','loss','return']
 #selected_keys = ['battle_won_mean', 'loss']
 name_list = [ "NO_Reset",
-              "No_reset2"
+              "CPU_4X",
+              "GPU_5X"
                          ]
 
 battle_name = 'Model_1'
