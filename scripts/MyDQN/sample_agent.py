@@ -59,10 +59,11 @@ class MyAgent(BaseAgent):
         self.memory = deque(maxlen=10000)
         self.epsilon = 1
         self.gamma = 0.99
-        self.batch_size = 64
-        self.update_freq = 50
+        self.batch_size = 128
+        self.update_freq = 100
         self.steps = 0
         self.done_condition = 0.005
+        self.train_interval = 10
 
         self.best_distance = 1000000
         self.total_reward = 0
@@ -127,7 +128,13 @@ class MyAgent(BaseAgent):
         if self.prev_state is not None and self.prev_action is not None:
             reward = self.get_reward(self.prev_state, current_state)
             done = self.get_distance(current_state) < self.done_condition
-            self.train(self.prev_state, self.prev_action, reward, current_state, done)
+            self.total_reward += reward
+            self.logger.info(f"訓練前")
+            # 每隔train_interval步执行一次批量训练
+            if self.steps % self.train_interval == 0:
+                self.logger.info(f"訓練中...")
+                self.train(self.prev_state, self.prev_action, reward, current_state, done)
+            
         self.logger.debug("訓練完成")
         
         # 選擇動作
@@ -149,6 +156,7 @@ class MyAgent(BaseAgent):
         self.prev_state = current_state
         self.prev_action = action
         self.prev_features = features
+        self.steps += 1
 
         # 更新 epsilon
         self.epsilon = max(0.1, self.epsilon * 0.999)
@@ -277,7 +285,6 @@ class MyAgent(BaseAgent):
             
             # 記錄訓練統計數據  
             distance = self.get_distance(state)
-            self.total_reward += reward
             
             # 每10步記錄一次
             if self.steps % 10 == 0:
@@ -286,7 +293,7 @@ class MyAgent(BaseAgent):
                 self.stats_logger.log_stat("loss", loss.item(), self.steps)
                 self.stats_logger.log_stat("return", self.total_reward, self.steps)
 
-            self.steps += 1
+            # self.steps += 1
             if self.steps % self.update_freq == 0:
                 self.target_model.load_state_dict(self.model.state_dict())
                 self.logger.debug(f"更新目標網路，步數: {self.steps}")

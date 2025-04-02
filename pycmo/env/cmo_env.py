@@ -260,7 +260,7 @@ class CMOEnv():
         self.step_id = 0
 
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
 
         # Watchdog 相關屬性
         self.observer = None
@@ -271,6 +271,8 @@ class CMOEnv():
         
         self.inst_changed = False
         self.check_inst_changed(callback=self.on_inst_changed)
+
+        self.obs = None
         # per comment (https://github.com/duyminh1998/pycmo/issues/25#issuecomment-1817773399) on issue #25, we need to edit the *_scen_has_ended.inst file when we init the env that the scenario has ended?
         with open(self.scen_ended, 'r') as file:
             data = file.readlines()
@@ -331,16 +333,17 @@ class CMOEnv():
         #if not self.check_game_ended(): self.client.start_scenario() # step the game forwards until the message box appears
         self.logger.debug("2")
         while True:
+            # self.logger.debug("3")
         # if the game has ended, then save the timestep information with a different step type
             if self.check_game_ended():
-                observation = self.get_obs()
+                observation = self.obs
                 reward = observation.side_.TotalScore
                 self.action_space.refresh(features=observation)
                 return TimeStep(self.step_id, StepType(2), reward, observation)
             elif self.inst_changed:
                 break
         self.logger.debug("4")
-        new_observation = self.get_obs()
+        new_observation = self.obs
         self.logger.debug("5")
         if new_observation.meta.Time == self.current_observation.meta.Time:
             self.logger.debug(f"Time is not advancing. Old time: {self.current_observation.meta.Time}, New time: {new_observation.meta.Time}. Moving forward with old state.")
@@ -367,7 +370,8 @@ class CMOEnv():
                 return obs
             except TypeError:
                 get_obs_retries += 1
-                sleep(0.001)
+                print("get_obs_retries: ",get_obs_retries)
+                sleep(0.0001)
                 if get_obs_retries > max_get_obs_retries:
                     raise TimeoutError("CMOEnv unable to get observation.")
     
@@ -457,6 +461,21 @@ class CMOEnv():
         Description:
             Callback function for when the .inst file changes.
         """
-        self.inst_changed = True
+        # with open(event_path, 'r', encoding='utf-8') as file:
+        #     file_content = file.read()
+            
+        # # 记录文件内容（可以只记录前100个字符作为摘要）
+        # content_summary = file_content[130:300] + "..." if len(file_content) > 300 else file_content
+        # self.logger.debug(f"修改后内容摘要: {content_summary}")
+        # print("111")
         self.logger.debug("inst_changed")
-
+        # print("222")
+        new_obs = self.get_obs()
+        # print("333")
+        if self.obs is None:
+            self.obs = new_obs
+        elif new_obs.meta.Time != self.obs.meta.Time:
+            self.inst_changed = True
+            self.obs = new_obs
+            self.logger.debug("obs changed")
+        # print("444")
