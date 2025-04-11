@@ -1,13 +1,9 @@
-# Author: Minh Hua
-# Date: 08/22/2021
-# Purpose: Edit the paths in the get_config function as needed and rename this file to config.py.
-
 import os
 
 def get_config():
-    pycmo_path = os.path.join("C:\\Users\\USER\\Desktop", "pycmo")
-    cmo_path = os.path.join("D:\\open\\SteamLibrary\\steamapps\\common", "Command - Modern Operations")
-    command_mo_version = "Command v1.07 - Build 1527"
+    pycmo_path = os.path.join("C:/Users/irisc/Desktop", "pycmopen")
+    cmo_path = os.path.join("C:/Program Files (x86)/Steam/steamapps/common", "Command - Modern Operations")
+    command_mo_version = "Command: Modern Operations v1.07 - Build 1567.6"
     use_gymnasium = False
 
     return {
