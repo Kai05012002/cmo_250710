@@ -1,5 +1,5 @@
 # pycmo-specific files
-pycmo/configs/config.py
+# pycmo/configs/config.py
 ipynb_demo.ipynb
 bax/
 raw/steps/*.xml
