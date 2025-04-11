@@ -83,7 +83,7 @@ def print_env_information(step_id:int, current_time:datetime, final_move:str, cu
     Returns:
         None
     """    
-    print("Step: {}".format(step_id))
+    # print("Step: {}".format(step_id))
     print("Current Time: {}".format(current_time))
     # print("Action: {}".format(final_move))
     # print("Current scenario score: {} \nCurrent reward: {}\n".format(current_score, current_reward))
