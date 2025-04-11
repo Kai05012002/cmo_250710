@@ -24,6 +24,8 @@ setup(
         'numpy>=1.10',
         'xmltodict==0.12.0',
         'pywin32==306',
+        'pyyaml',
+        'watchdog',
     ],
     extras_require={
         "gym": ['gymnasium==0.29.1']
