@@ -7,7 +7,11 @@
 
 執行指令
 ```bash
+# DQN
 python .\scripts\MyDQN\demo.py --config=scripts/MyDQN/config.yaml
+
+# FeUdal
+python .\scripts\Feudal\demo.py --config=scripts/Feudal/config.yaml
 ```
 
 
