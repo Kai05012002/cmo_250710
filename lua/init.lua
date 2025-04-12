@@ -4,7 +4,7 @@ function setup_observation_export_agent_action(lua_script_foldername, pycmo_lib_
     local agent_action_event_name = 'Execute agent action'
     local agent_action_trigger_name = 'Execute agent action every seconds'
     local agent_action_name = 'Agent action'
-    local agent_action_script_text = setup_script_text .. "ScenEdit_RunScript(lua_script_foldername ..'" .. agent_action_lua_filename .. "', true)"
+    local agent_action_script_text = setup_script_text .. "ScenEdit_RunScript('" .. agent_action_lua_filename .. "', true)"
     
     -- Remove these events, triggers, and actions if they are already present
     local scenario_events = ScenEdit_GetEvents(1)
