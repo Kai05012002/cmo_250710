@@ -1,1 +1,0 @@
-ScenEdit_SetUnit({side = 'Taiwan', name = 'Cheng Kung', desiredHeading = 90, Speed = 30})

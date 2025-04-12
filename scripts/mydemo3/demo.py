@@ -24,7 +24,7 @@ scenario_script_folder_name = "mydemo3"  # name of folder containing the lua scr
 
 command_version = config["command_mo_version"]
 observation_path = os.path.join(config['steam_observation_folder_path'], f'{scenario_name}.inst')
-action_path = os.path.join(config["scripts_path"], scenario_script_folder_name, "agent_action.lua")
+action_path = os.path.join(config['steam_observation_folder_path'], "agent_action.lua")
 scen_ended_path = os.path.join(config['steam_observation_folder_path'], f'{scenario_name}_scen_has_ended.inst')
 steam_client_props = SteamClientProps(scenario_name=scenario_name, agent_action_filename=action_path, command_version=command_version)
 

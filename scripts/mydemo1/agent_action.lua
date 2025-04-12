@@ -1,1 +1,0 @@
-ScenEdit_SetUnit({side = 'Taiwan', name = 'Cheng Kung', desiredHeading = 48.272602081299})

@@ -70,7 +70,7 @@ def main():
     # 設置文件路徑
     command_version = base_config["command_mo_version"]
     observation_path = os.path.join(base_config['steam_observation_folder_path'], f'{scenario_name}.inst')
-    action_path = os.path.join(base_config["scripts_path"], scenario_script_folder_name, "agent_action.lua")
+    action_path = os.path.join(base_config['steam_observation_folder_path'], "agent_action.lua")
     scen_ended_path = os.path.join(base_config['steam_observation_folder_path'], f'{scenario_name}_scen_has_ended.inst')
 
     # 初始化 Steam 客戶端屬性
