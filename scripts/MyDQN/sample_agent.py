@@ -1,6 +1,7 @@
 from pycmo.lib.actions import AvailableFunctions, set_unit_position, set_unit_heading_and_speed
 from pycmo.agents.base_agent import BaseAgent
 from pycmo.lib.features import FeaturesFromSteam, Unit
+from pycmo.lib.logger import Logger
 import numpy as np
 from collections import deque
 
@@ -9,7 +10,6 @@ import random
 import torch
 import torch.nn as nn
 
-from scripts.MyDQN.logger import Logger
 import logging
 
 # DQN 模型
