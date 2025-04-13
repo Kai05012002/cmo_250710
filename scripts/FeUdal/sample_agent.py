@@ -58,12 +58,16 @@ class MyAgent(BaseAgent):
         self.worker_optimizer = torch.optim.Adam(self.worker.parameters(), lr=1e-3)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=1e-3)  # 使用manager的critic部分
         
-        self.memory = deque(maxlen=10000)
+        # 修改記憶存儲方式，使用列表存儲完整的episode
+        self.episode_memory = []  # 存儲當前episode的經驗
+        self.completed_episodes = []  # 存儲已完成的episodes
+        self.max_episodes = 10  # 最多保存的episode數量
+        
         self.epsilon = 1
         self.gamma = 0.99
-        self.batch_size = 128
+        self.batch_size = 256
         self.update_freq = 100
-        self.steps = 0
+        self.total_steps = 0
         self.done_condition = 0.005
         self.train_interval = 10
 
@@ -86,6 +90,12 @@ class MyAgent(BaseAgent):
 
         # 初始化訓練統計記錄器（如果有的話）
         self.stats_logger = Logger()
+        
+        # 添加遊戲結束標記
+        self.episode_step = 0
+        self.max_episode_steps = 200
+        self.episode_done = False
+        self.episode_reward = 0
 
     def get_unit_info_from_observation(self, features: FeaturesFromSteam, unit_name: str) -> Unit:
         """
@@ -127,7 +137,7 @@ class MyAgent(BaseAgent):
         :param VALID_FUNCTIONS: 可用的動作函數
         :return: 執行的動作命令（字串）
         """
-        print("step:", self.steps)
+        print("total_step:", self.total_steps)
         self.logger.debug("開始執行動作")
         action = ""
         ac = self.get_unit_info_from_observation(features, self.ac_name)
@@ -144,15 +154,27 @@ class MyAgent(BaseAgent):
             reward = self.get_reward(self.prev_state, current_state)
             done = self.get_distance(current_state) < self.done_condition
             self.total_reward += reward
+            self.episode_reward += reward
             
-            # 将经验直接添加到记忆中
-            self.memory.append((self.prev_state, current_state, self.prev_action, reward, done, self.prev_goal, self.prev_critic_value))
+            # 將經驗添加到當前episode的記憶中
+            self.episode_memory.append((self.prev_state, current_state, self.prev_action, reward, done, self.prev_goal, self.prev_critic_value))
             
-            self.logger.debug(f"訓練前")
-            # 每隔train_interval步执行一次批量训练
-            if self.steps % self.train_interval == 0:
-                self.logger.info(f"訓練中...")
+            # 檢查遊戲是否結束
+            if done or self.episode_step > self.max_episode_steps:
+                self.episode_done = True
+                self.logger.info(f"遊戲結束! 總獎勵: {self.episode_reward:.4f}")
+                
+                # 將完成的episode添加到已完成episodes列表中
+                if len(self.episode_memory) > 0:
+                    self.completed_episodes.append(self.episode_memory)
+                    # 限制已完成的episodes數量
+                    if len(self.completed_episodes) > self.max_episodes:
+                        self.completed_episodes.pop(0)
+                
+                # 在遊戲結束時進行訓練
                 self.train()
+                # 重置遊戲狀態
+                return self.reset()
             
         self.logger.debug("訓練完成")
         
@@ -186,7 +208,8 @@ class MyAgent(BaseAgent):
         self.prev_action = action
         self.prev_goal = goal
         self.prev_critic_value = critic_value
-        self.steps += 1
+        self.total_steps += 1
+        self.episode_step += 1
 
         # 更新 epsilon
         self.epsilon = max(0.1, self.epsilon * 0.999)
@@ -293,106 +316,145 @@ class MyAgent(BaseAgent):
 
     def train(self):
         """訓練FeUdal網路"""
-        if len(self.memory) >= self.batch_size:
-            batch = random.sample(self.memory, self.batch_size)
-            states, next_states, actions, rewards, dones, goals, critic_values = zip(*batch)
-            states = torch.tensor(states, dtype=torch.float32).to(self.device)
-            next_states = torch.tensor(next_states, dtype=torch.float32).to(self.device)
-            actions = torch.tensor(actions, dtype=torch.long).unsqueeze(1).to(self.device)
-            rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
-            dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
+        # 檢查是否有足夠的episodes進行訓練
+        if len(self.completed_episodes) < 1:
+            self.logger.warning("沒有足夠的episodes進行訓練")
+            return
             
-            # 修复：直接将张量堆叠而不使用numpy
-            goals_tensor = torch.stack([g.detach() for g in goals]).to(self.device)
-            critic_values_tensor = torch.stack([cv.detach() for cv in critic_values]).to(self.device)
+        # 從已完成的episodes中隨機選擇一個episode
+        episode = random.choice(self.completed_episodes)
+        
+        batch = episode
             
-            #----------------------------- Calculate manager loss -----------------------------------
-            
-            # 为训练创建新的隐藏状态，批次大小为 batch_size
-            train_manager_hidden = (
-                self.manager_hidden[0].expand(self.batch_size, -1),
-                self.manager_hidden[1].expand(self.batch_size, -1)
-            )
-            train_worker_hidden = (
-                self.worker_hidden[0].expand(self.batch_size, -1),
-                self.worker_hidden[1].expand(self.batch_size, -1)
-            )
-            
-            _, current_goals, _ = self.manager(states, train_manager_hidden)
-            
-            current_values = self.critic(states)
+        # 解包批次數據
+        states, next_states, actions, rewards, dones, goals, critic_values = zip(*batch)
+        
+        # 轉換為張量
+        states = torch.tensor(states, dtype=torch.float32).to(self.device)
+        next_states = torch.tensor(next_states, dtype=torch.float32).to(self.device)
+        actions = torch.tensor(actions, dtype=torch.long).unsqueeze(1).to(self.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
+        
+        # 修复：直接将张量堆叠而不使用numpy
+        goals_tensor = torch.stack([g.detach() for g in goals]).to(self.device)
+        critic_values_tensor = torch.stack([cv.detach() for cv in critic_values]).to(self.device)
+        
+        # 獲取實際的批次大小
+        actual_batch_size = states.size(0)
 
-            state_diff = next_states - states
-            returns = compute_returns(rewards, self.gamma, current_values, dones)
-            advantages = returns - current_values
-            # 標準化
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        self.manager_hidden = self.manager.init_hidden()
+        self.worker_hidden = self.worker.init_hidden()
+        #----------------------------- Calculate manager loss -----------------------------------
+        
+        # # 为训练创建新的隐藏状态，批次大小为实际批次大小
+        # train_manager_hidden = (
+        #     self.manager_hidden[0].expand(actual_batch_size, -1),
+        #     self.manager_hidden[1].expand(actual_batch_size, -1)
+        # )
+        # train_worker_hidden = (
+        #     self.worker_hidden[0].expand(actual_batch_size, -1),
+        #     self.worker_hidden[1].expand(actual_batch_size, -1)
+        # )
+        current_goals = []
+        for t in range(actual_batch_size):
+            _, goal, self.manager_hidden = self.manager(states[t].unsqueeze(0), self.manager_hidden)
+            current_goals.append(goal)
+        current_goals = torch.stack(current_goals).squeeze(1)
+        
+        current_values = self.critic(states)
 
-            temp_state_diff = F.normalize(state_diff, dim=-1, p=2)
-            temp_goals = F.normalize(current_goals, dim=-1, p=2)
-            cos_sim = F.cosine_similarity(temp_state_diff, temp_goals, dim=-1)
+        state_diff = next_states - states
+        returns = compute_returns(rewards, self.gamma, current_values, dones)
+        advantages = returns - current_values
+        # 標準化
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-            # Manager更新
-            manager_loss = -(advantages.detach() * cos_sim).mean()
-            
-            self.manager_optimizer.zero_grad()
-            manager_loss.backward()
-            self.manager_optimizer.step()
+        temp_state_diff = F.normalize(state_diff, dim=-1, p=2)
+        temp_goals = F.normalize(current_goals, dim=-1, p=2)
+        cos_sim = F.cosine_similarity(temp_state_diff, temp_goals, dim=-1)
 
-            #----------------------------- Calculate worker loss -----------------------------------
+        # Manager更新
+        manager_loss = -(advantages.detach() * cos_sim).mean()
+        
+        self.manager_optimizer.zero_grad()
+        manager_loss.backward()
+        self.manager_optimizer.step()
 
-            current_q, _ = self.worker(states, train_worker_hidden, current_goals.detach())
-            current_q = current_q.gather(1, actions)
-            
-            with torch.no_grad():
-                _, next_goals, _ = self.manager(next_states, train_manager_hidden)
-                next_q, _ = self.worker(next_states, train_worker_hidden, next_goals)
+        #----------------------------- Calculate worker loss -----------------------------------
+        self.worker_hidden = self.worker.init_hidden()
+        current_q = []
+        target_q = []
+
+        for t in range(actual_batch_size):
+            q, self.worker_hidden = self.worker(states[t].unsqueeze(0), self.worker_hidden, current_goals[t].detach())
+            current_q.append(q.squeeze(0).gather(0, actions[t]))
+        current_q = torch.stack(current_q)
+        
+        
+        self.manager_hidden = self.manager.init_hidden()
+        self.worker_hidden = self.worker.init_hidden()
+        with torch.no_grad():
+            for t in range(actual_batch_size):
+                _, next_goal, self.manager_hidden = self.manager(next_states[t].unsqueeze(0), self.manager_hidden)
+                next_q, self.worker_hidden = self.worker(next_states[t].unsqueeze(0), self.worker_hidden, next_goal)
                 next_q = next_q.max(1)[0]
-                target_q = rewards + (1 - dones) * self.gamma * next_q
+                target = rewards + (1 - dones) * self.gamma * next_q
+                target_q.append(target.squeeze(0))
+        target_q = torch.stack(target_q)
+        worker_loss = nn.MSELoss()(current_q, target_q)
+        
+        self.worker_optimizer.zero_grad()
+        worker_loss.backward()
+        self.worker_optimizer.step()
 
-            worker_loss = nn.MSELoss()(current_q.squeeze(), target_q)
-            
-            self.worker_optimizer.zero_grad()
-            worker_loss.backward()
-            self.worker_optimizer.step()
+        #----------------------------- Calculate critic loss -----------------------------------
+        critic_loss = 0.5 * (advantages ** 2).mean()
 
-            #----------------------------- Calculate critic loss -----------------------------------
-            critic_loss = 0.5 * (advantages ** 2).mean()
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
 
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            self.critic_optimizer.step()
+        # 記錄訓練統計數據  
+        distance = self.get_distance(states[0])
+        
+        # 每10步記錄一次
+        # if self.total_steps % 10 == 0:
+        total_loss = manager_loss.item() + worker_loss.item()
+        self.logger.info(f"步數: {self.total_steps}, 距離: {distance:.4f}, 損失: {total_loss:.4f}, 總獎勵: {self.total_reward:.4f}")
+        self.stats_logger.log_stat("distance", distance.item(), self.total_steps)
+        self.stats_logger.log_stat("manager_loss", manager_loss.item(), self.total_steps)
+        self.stats_logger.log_stat("worker_loss", worker_loss.item(), self.total_steps)
+        self.stats_logger.log_stat("return", self.total_reward, self.total_steps)
 
-            # 記錄訓練統計數據  
-            distance = self.get_distance(states[0])
-            
-            # 每10步記錄一次
-            if self.steps % 10 == 0:
-                total_loss = manager_loss.item() + worker_loss.item()
-                self.logger.info(f"步數: {self.steps}, 距離: {distance:.4f}, 損失: {total_loss:.4f}, 總獎勵: {self.total_reward:.4f}")
-                self.stats_logger.log_stat("distance", distance.item(), self.steps)
-                self.stats_logger.log_stat("manager_loss", manager_loss.item(), self.steps)
-                self.stats_logger.log_stat("worker_loss", worker_loss.item(), self.steps)
-                self.stats_logger.log_stat("return", self.total_reward, self.steps)
-
-            if self.steps % self.update_freq == 0:
-                self.manager_hidden = self.manager.init_hidden()
-                self.worker_hidden = self.worker.init_hidden()
-                self.logger.debug(f"更新FeUdal網路，步數: {self.steps}")
+        # if self.total_steps % self.update_freq == 0:
+        #     self.manager_hidden = self.manager.init_hidden()
+        #     self.worker_hidden = self.worker.init_hidden()
+        #     self.logger.debug(f"更新FeUdal網路，步數: {self.total_steps}")
     
-    # def reset(self):
-    #     self.best_distance = 1000000
-    #     self.prev_state = None
-    #     self.prev_action = None
-    #     self.state_history.clear()  # 清空狀態歷史
-    #     # self.hidden = self.model.init_hidden(1)  # 重置隱藏狀態
-    #     # self.total_reward = 0
-    #     return set_unit_position(
-    #         side=self.player_side,
-    #         unit_name=self.ac_name,
-    #         latitude=24.04,
-    #         longitude=122.18
-    #     )
+    def reset(self):
+        """重置遊戲狀態，準備開始新的episode"""
+        self.best_distance = 1000000
+        self.prev_state = None
+        self.prev_action = None
+        self.prev_goal = None
+        self.prev_critic_value = None
+        self.episode_step = 0
+        self.episode_done = False
+        self.episode_reward = 0
+        self.manager_hidden = self.manager.init_hidden()
+        self.worker_hidden = self.worker.init_hidden()
+        # 清空當前episode的記憶
+        self.episode_memory = []
+        self.logger.info("重置遊戲狀態，準備開始新的episode")
+        
+        # 重置單位位置（如果需要）
+        return set_unit_position(
+            side=self.player_side,
+            unit_name=self.ac_name,
+            latitude=24.04,
+            longitude=122.18
+        )
 
 
 def compute_returns(rewards, gamma, values, terminated): 
