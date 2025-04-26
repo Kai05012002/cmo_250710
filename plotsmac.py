@@ -132,22 +132,35 @@ def create_dynamic_window(data_list, keys, name_list, battle_name):
 
 # 使用者選擇要繪製的數據
 file_paths = [
-              'logs/run_20250327_173035/stats.json',
-              'logs/run_20250330_235037_CPU_4X/stats.json',
-              'logs/run_20250402_013318_GPU_5X/stats.json',
-              'logs/run_20250402_053653/stats.json',
-              'logs/run_20250409_043516/stats.json'
+            #   'logs/run_20250327_173035/stats.json',
+            #   'logs/run_20250330_235037_CPU_4X/stats.json',
+            #   'logs/run_20250402_013318_GPU_5X/stats.json',
+            #   'logs/run_20250402_053653/stats.json',
+            #   'logs/run_20250409_043516/stats.json',
+            #   'logs/run_20250414_052243/stats.json',
+            #   'logs/run_20250416_031716/stats.json',
+              'logs/run_20250421_050328/stats.json',
+              'logs/run_20250423_031112/stats.json',
+              'logs/run_20250423_060445/stats.json',
+              'logs/run_20250423_142833/stats.json'
               ]
 
 data_list = load_data(file_paths)
-selected_keys = ['distance','loss','return','manager_loss', 'worker_loss']
+selected_keys = ['distance','episode_return','loss']
 #selected_keys = ['battle_won_mean', 'loss']
-name_list = [ "NO_Reset",
-              "CPU_4X",
-              "GPU_5X",
-              "RAMDISK_5X",
-              "Feudal_5X"
-                         ]
+name_list = [ 
+                # "NO_Reset",
+                # "CPU_4X",
+                # "GPU_5X",
+                # "RAMDISK_5X",
+                # "Feudal_5X",
+                # "Feudal_5X+singleEpisode_beta",
+                # "Feudal_5X+singleEpisode_beta_2",
+                "RDQN_5X+singleEpisode_beta",
+                "RDQN_5X+singleEpisode_beta_2",
+                "RDQN_5X+singleEpisode_beta_3",
+                "RDQN_5X+singleEpisode_beta_4"
+            ]
 
 battle_name = 'Model_1'
 
