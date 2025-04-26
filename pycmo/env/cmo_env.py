@@ -363,7 +363,7 @@ class CMOEnv():
 
     def get_obs(self) -> FeaturesFromSteam:
         get_obs_retries = 0
-        max_get_obs_retries = 100
+        max_get_obs_retries = 10000
         while True:
             try:
                 obs = FeaturesFromSteam(cmo_steam_observation_file_to_xml(self.observation_path), self.player_side) 
