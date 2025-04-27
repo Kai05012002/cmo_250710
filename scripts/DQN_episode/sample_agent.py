@@ -10,11 +10,31 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from copy import deepcopy   
 
 import logging
 
 # 导入FeUdal模型
 from scripts.DQN_episode.DQN_agent import RNN_Agent
+
+
+class ReplayBuffer:
+    """
+    簡單的環形緩衝區，用於離線隨機抽樣訓練。
+    """
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=capacity)
+
+    def push(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+
+    def sample(self, batch_size):
+        batch = random.sample(self.buffer, batch_size)
+        states, actions, rewards, next_states, dones = map(np.array, zip(*batch))
+        return states, actions, rewards, next_states, dones
+
+    def __len__(self):
+        return len(self.buffer)
 
 class MyAgent(BaseAgent):
     def __init__(self, player_side: str, ac_name: str, target_name: str = None):
@@ -36,7 +56,7 @@ class MyAgent(BaseAgent):
         # FeUdal网络参数
         class Args:
             def __init__(self):
-                self.hidden_dim = 64
+                self.hidden_dim = 128
                 self.state_dim_d = 6
                 self.n_actions = 4  # 上下左右
 
@@ -47,39 +67,46 @@ class MyAgent(BaseAgent):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.logger.info(f"使用設備: {self.device}")
         
+        # 建立 policy_net 與 target_net
         self.rnn_agent = RNN_Agent(self.input_size, self.args).to(self.device)
-        
-        self.rnn_agent_optimizer = torch.optim.Adam(self.rnn_agent.parameters(), lr=5e-4)
+        self.target_rnn_agent = deepcopy(self.rnn_agent)
+        self.target_rnn_agent.eval() # 設置為評估模式
+        self.rnn_agent_optimizer = torch.optim.Adam(self.rnn_agent.parameters(), lr=1e-3)
         
         # 修改記憶存儲方式，使用列表存儲完整的episode
         self.episode_memory = []  # 存儲當前episode的經驗
         self.completed_episodes = []  # 存儲已完成的episodes
         self.max_episodes = 10  # 最多保存的episode數量
-        
-        self.epsilon = 1
+
+
+        # 基本超參數
         self.gamma = 0.99
+        self.lr = 5e-4
         self.batch_size = 256
-        self.update_freq = 100
-        self.total_steps = 0
+        self.train_interval = 50        # 每隔多少 steps 學習一次
+        self.update_freq = 1000         # 每隔多少 steps 同步 target network
+        self.eps_start = 1.0
+        self.eps_end = 0.1
+        self.eps_decay_steps = 200000
+        
         self.done_condition = 0.005
-        self.train_interval = 10
 
         # 初始化隐藏状态
         self.rnn_agent_hidden = self.rnn_agent.init_hidden()
 
 
-        self.single_past_goals = []
-        self.batch_past_goals = []
-
         self.best_distance = 1000000
         self.worst_distance = 0
         self.total_reward = 0
 
+        # 初始化緩衝區
+        self.replay_buffer = ReplayBuffer(capacity=100000)
+        self.total_steps = 0
+        self.epsilon = 1.0
+
         # 用於解決 next_state 延遲的屬性
         self.prev_state = None
         self.prev_action = None
-        self.prev_goal = None
-        self.prev_critic_value = None
 
         # 初始化訓練統計記錄器（如果有的話）
         self.stats_logger = Logger()
@@ -163,6 +190,7 @@ class MyAgent(BaseAgent):
             # 檢查遊戲是否結束
             if done or self.episode_step > self.max_episode_steps:
                 self.episode_done = True
+                self.episode_count += 1
                 self.logger.info(f"遊戲結束! 總獎勵: {self.episode_reward:.4f}")
                 
                 # 將完成的episode添加到已完成episodes列表中
@@ -176,10 +204,12 @@ class MyAgent(BaseAgent):
                 for _ in range(5):
                     loss = self.train()
                 # 重置遊戲狀態
-                self.logger.info(f"步數: {self.total_steps}, 距離: {distance:.4f}, 損失: {loss:.4f}, 總獎勵: {self.total_reward:.4f}")
-                self.stats_logger.log_stat("distance", distance, self.total_steps)
-                self.stats_logger.log_stat("loss", loss, self.total_steps)
-                self.stats_logger.log_stat("episode_return", self.episode_reward, self.total_steps)
+                if self.episode_count % 5 == 0:
+                    self.logger.info(f"步數: {self.total_steps}, 距離: {distance:.4f}, 損失: {loss:.4f}, 總獎勵: {self.total_reward:.4f}")
+                    self.stats_logger.log_stat("distance", distance, self.total_steps)
+                    self.stats_logger.log_stat("best_distance", self.best_distance, self.total_steps)
+                    self.stats_logger.log_stat("loss", loss, self.total_steps)
+                    self.stats_logger.log_stat("episode_return", self.episode_reward, self.total_steps)
                 return self.reset()
             
         
@@ -210,6 +240,9 @@ class MyAgent(BaseAgent):
         # 更新 epsilon
         self.epsilon = max(0.1, self.epsilon * 0.9999)
         self.logger.debug(f"更新epsilon: {self.epsilon:.4f}")
+
+        if self.total_steps % self.update_freq == 0:
+            self.target_rnn_agent.load_state_dict(self.rnn_agent.state_dict())
         
         return action_cmd
     
@@ -274,23 +307,23 @@ class MyAgent(BaseAgent):
         
         self.logger.debug(f"距離變化: {distance:.4f} -> {next_distance:.4f}")
             
-        reward = 500 * (distance-next_distance)
+        reward = 200 * (distance-next_distance)
         # print(f"Reward: {reward}")
         if next_distance + 0.01 < self.best_distance:
             self.best_distance = next_distance   #如果當前距離比最佳距離近0.5公里 換他當最佳距離 然後給獎勵
-            reward += 10
+            reward += 1
             self.logger.debug(f"新的最佳距離: {self.best_distance:.4f}")
-        if next_distance - 0.01 > self.worst_distance:
+        if next_distance - 0.03 > self.best_distance:
             self.worst_distance = next_distance
-            reward -= 10
+            reward -= 0.1
             self.logger.debug(f"新的最差距離: {self.worst_distance:.4f}")
         if next_distance < self.done_condition:
-            reward += 100
+            reward += 20
         # if next_distance > 0.25:
         #     reward -= 100
         # print(f"FinalReward: {reward:.4f}")
             self.logger.debug("達到目標條件!")
-        reward -= 0.1
+        reward -= 0.01
         self.logger.debug(f"獎勵: {reward:.4f}")
             
         return reward
@@ -336,44 +369,34 @@ class MyAgent(BaseAgent):
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
         
-        
         # 獲取實際的批次大小
         actual_batch_size = states.size(0)
 
-
-
+        #----------------------------- Calculate loss -----------------------------------
         
-
-        #----------------------------- Calculate worker loss -----------------------------------
-        self.rnn_agent_hidden = self.rnn_agent.init_hidden()
         current_q = []
         target_q = []
 
+        h0 = self.rnn_agent.init_hidden()
         for t in range(actual_batch_size):
-            q, self.rnn_agent_hidden = self.rnn_agent(states[t].unsqueeze(0), self.rnn_agent_hidden)
+            q, h0 = self.rnn_agent(states[t].unsqueeze(0), h0)
             current_q.append(q.squeeze(0).gather(0, actions[t]))
         current_q = torch.stack(current_q)
         
-        self.rnn_agent_hidden = self.rnn_agent.init_hidden()
+        h1 = self.rnn_agent.init_hidden()
         with torch.no_grad():
             for t in range(actual_batch_size):
-                next_q, _ = self.rnn_agent(next_states[t].unsqueeze(0), self.rnn_agent_hidden)
-                next_q = next_q.max(1)[0]
-                target = rewards + (1 - dones) * self.gamma * next_q
+                next_q, h1 = self.target_rnn_agent(next_states[t].unsqueeze(0), h1)
+                max_next_q = next_q.max(1)[0]
+                target = rewards[t] + (1 - dones[t]) * self.gamma * max_next_q
                 target_q.append(target.squeeze(0))
         target_q = torch.stack(target_q)
-        
-        
         
         self.rnn_agent_optimizer.zero_grad()
         loss = 0.5 * (current_q - target_q).pow(2).mean()
         loss.backward()
         self.rnn_agent_optimizer.step()
-
-        
-
-        # 記錄訓練統計數據  
-        distance = self.get_distance(states[-1])
+         # 記錄訓練統計數據  
         
         # 每10步記錄一次
         # if self.total_steps % 10 == 0:
