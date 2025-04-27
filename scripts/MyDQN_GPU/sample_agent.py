@@ -50,6 +50,7 @@ class MyAgent(BaseAgent):
         
         # 檢查CUDA是否可用
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # self.device = torch.device("cpu")
         self.logger.info(f"使用設備: {self.device}")
         
         self.model = DQN(self.input_size, self.hidden_size, self.num_actions).to(self.device)
@@ -59,11 +60,9 @@ class MyAgent(BaseAgent):
         self.memory = deque(maxlen=10000)
         self.epsilon = 1
         self.gamma = 0.99
-        self.batch_size = 128
         self.update_freq = 100
         self.steps = 0
         self.done_condition = 0.005
-        self.train_interval = 10
 
         self.best_distance = 1000000
         self.total_reward = 0
@@ -130,10 +129,9 @@ class MyAgent(BaseAgent):
             done = self.get_distance(current_state) < self.done_condition
             self.total_reward += reward
             self.logger.debug(f"訓練前")
-            # 每隔train_interval步执行一次批量训练
-            if self.steps % self.train_interval == 0:
-                self.logger.info(f"訓練中...")
-                self.train(self.prev_state, self.prev_action, reward, current_state, done)
+            # 每步都进行训练
+            self.logger.info(f"訓練中...")
+            self.train(self.prev_state, self.prev_action, reward, current_state, done)
             
         self.logger.debug("訓練完成")
         
@@ -261,42 +259,40 @@ class MyAgent(BaseAgent):
 
     def train(self, state, action, reward, next_state, done):
         """訓練 DQN 模型"""
+        # 将经验添加到记忆中
         self.memory.append((state, action, reward, next_state, done))
-        if len(self.memory) >= self.batch_size:
-            batch = random.sample(self.memory, self.batch_size)
-            states, actions, rewards, next_states, dones = zip(*batch)
-            
-            states = torch.tensor(states, dtype=torch.float32).to(self.device)
-            actions = torch.tensor(actions, dtype=torch.long).unsqueeze(1).to(self.device)
-            rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
-            next_states = torch.tensor(next_states, dtype=torch.float32).to(self.device)
-            dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
-            
-            current_q = self.model(states).gather(1, actions)
-            next_q = self.target_model(next_states).max(1)[0]
-            target_q = rewards + (1 - dones) * self.gamma * next_q
-            
-            loss = nn.MSELoss()(current_q.squeeze(), target_q)
-            self.logger.debug(f"損失: {loss.item():.4f}")
-            
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-            
-            # 記錄訓練統計數據  
-            distance = self.get_distance(state)
-            
-            # 每10步記錄一次
-            if self.steps % 10 == 0:
-                self.logger.info(f"步數: {self.steps}, 距離: {distance:.4f}, 損失: {loss.item():.4f}, 總獎勵: {self.total_reward:.4f}")
-                self.stats_logger.log_stat("distance", distance, self.steps)
-                self.stats_logger.log_stat("loss", loss.item(), self.steps)
-                self.stats_logger.log_stat("return", self.total_reward, self.steps)
+        
+        # 每步训练，不使用批量
+        states = torch.tensor([state], dtype=torch.float32).to(self.device)
+        actions = torch.tensor([action], dtype=torch.long).unsqueeze(1).to(self.device)
+        rewards = torch.tensor([reward], dtype=torch.float32).to(self.device)
+        next_states = torch.tensor([next_state], dtype=torch.float32).to(self.device)
+        dones = torch.tensor([done], dtype=torch.float32).to(self.device)
+        
+        current_q = self.model(states).gather(1, actions)
+        next_q = self.target_model(next_states).max(1)[0]
+        target_q = rewards + (1 - dones) * self.gamma * next_q
+        
+        loss = nn.MSELoss()(current_q.squeeze(), target_q)
+        self.logger.debug(f"損失: {loss.item():.4f}")
+        
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
+        # 記錄訓練統計數據  
+        distance = self.get_distance(state)
+        
+        # 每10步記錄一次
+        if self.steps % 10 == 0:
+            self.logger.info(f"步數: {self.steps}, 距離: {distance:.4f}, 損失: {loss.item():.4f}, 總獎勵: {self.total_reward:.4f}")
+            self.stats_logger.log_stat("distance", distance, self.steps)
+            self.stats_logger.log_stat("loss", loss.item(), self.steps)
+            self.stats_logger.log_stat("return", self.total_reward, self.steps)
 
-            # self.steps += 1
-            if self.steps % self.update_freq == 0:
-                self.target_model.load_state_dict(self.model.state_dict())
-                self.logger.debug(f"更新目標網路，步數: {self.steps}")
+        if self.steps % self.update_freq == 0:
+            self.target_model.load_state_dict(self.model.state_dict())
+            self.logger.debug(f"更新目標網路，步數: {self.steps}")
     
     # def reset(self):
     #     self.best_distance = 1000000
