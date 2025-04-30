@@ -57,11 +57,11 @@ class MyAgent(BaseAgent):
         class Args:
             def __init__(self):
                 self.hidden_dim = 128
-                self.state_dim_d = 6
+                self.state_dim_d = 3
                 self.n_actions = 4  # 上下左右
 
         self.args = Args()
-        self.input_size = 6  # [B_lon, B_lat, B_heading, B_speed, A_lon, A_lat]
+        self.input_size = 3  # [B_lon, B_lat, B_heading, B_speed, A_lon, A_lat]
         
         # 檢查CUDA是否可用
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -71,12 +71,12 @@ class MyAgent(BaseAgent):
         self.rnn_agent = RNN_Agent(self.input_size, self.args).to(self.device)
         self.target_rnn_agent = deepcopy(self.rnn_agent)
         self.target_rnn_agent.eval() # 設置為評估模式
-        self.rnn_agent_optimizer = torch.optim.Adam(self.rnn_agent.parameters(), lr=1e-3)
+        self.rnn_agent_optimizer = torch.optim.Adam(self.rnn_agent.parameters(), lr=3e-4)
         
         # 修改記憶存儲方式，使用列表存儲完整的episode
         self.episode_memory = []  # 存儲當前episode的經驗
         self.completed_episodes = []  # 存儲已完成的episodes
-        self.max_episodes = 10  # 最多保存的episode數量
+        self.max_episodes = 32  # 最多保存的episode數量
 
 
         # 基本超參數
@@ -84,12 +84,12 @@ class MyAgent(BaseAgent):
         self.lr = 5e-4
         self.batch_size = 256
         self.train_interval = 50        # 每隔多少 steps 學習一次
-        self.update_freq = 1000         # 每隔多少 steps 同步 target network
+        self.update_freq = 2000        # 每隔多少 steps 同步 target network
         self.eps_start = 1.0
         self.eps_end = 0.1
         self.eps_decay_steps = 200000
         
-        self.done_condition = 0.005
+        self.done_condition = 0.1
 
         # 初始化隐藏状态
         self.rnn_agent_hidden = self.rnn_agent.init_hidden()
@@ -142,15 +142,21 @@ class MyAgent(BaseAgent):
         """计算智能体与目标之间的距离，支持NumPy数组和PyTorch张量"""
         if isinstance(state, torch.Tensor):
             # 使用PyTorch操作
-            return torch.sqrt((state[0] - state[4])**2 + (state[1] - state[5])**2)
+            return torch.sqrt((state[0])**2 + (state[1])**2)
         else:
             # 使用NumPy操作
-            return np.sqrt((state[0] - state[4])**2 + (state[1] - state[5])**2)
-
-    def debug_print(self, message):
-        """只在調試模式下打印信息"""
-        if self.debug_mode:
-            print(message)
+            return np.sqrt((state[0])**2 + (state[1])**2)
+    def get_done(self, state):
+        done = False
+        distance = self.get_distance(state)
+        # 如果距離大於0.5公里，則認為達到目標
+        if abs(state[0]) > 1:
+            done = True
+        if abs(state[1]) > 1:
+            done = True
+        if distance < self.done_condition:
+            done = True
+        return done
             
     def action(self, features: FeaturesFromSteam, VALID_FUNCTIONS: AvailableFunctions) -> str:
         """
@@ -180,7 +186,7 @@ class MyAgent(BaseAgent):
         if self.prev_state is not None and self.prev_action is not None:
             reward = self.get_reward(self.prev_state, current_state)
             distance = self.get_distance(current_state)
-            done = distance < self.done_condition
+            done = self.get_done(current_state)
             self.total_reward += reward
             self.episode_reward += reward
             
@@ -201,7 +207,7 @@ class MyAgent(BaseAgent):
                         self.completed_episodes.pop(0)
                 
                 # 在遊戲結束時進行訓練
-                for _ in range(5):
+                for _ in range(10):
                     loss = self.train()
                 # 重置遊戲狀態
                 if self.episode_count % 5 == 0:
@@ -247,29 +253,24 @@ class MyAgent(BaseAgent):
         return action_cmd
     
     def normalize_state(self, state):
-        min_lon, max_lon = 121.0, 122.5  # 根據你的地圖範圍調整
-        min_lat, max_lat = 23.5, 24.5
-        min_heading, max_heading = 0.0, 360.0
-        min_speed, max_speed = 0.0, 30.0
+        max_distanceX = 20  # 根據你的地圖範圍調整
+        max_distanceY = 20
         norm_state = np.zeros_like(state)
-        norm_state[0] = (state[0] - min_lon) / (max_lon - min_lon)  # B_lon
-        norm_state[1] = (state[1] - min_lat) / (max_lat - min_lat)  # B_lat
-        norm_state[2] = state[2] / max_heading  # B_heading
-        norm_state[3] = state[3] / max_speed  # B_speed   
-        norm_state[4] = (state[4] - min_lon) / (max_lon - min_lon)  # A_lon
-        norm_state[5] = (state[5] - min_lat) / (max_lat - min_lat)  # A_lat
-        return norm_state   
+        norm_state[0] = state[0] / max_distanceX  # 相對X
+        norm_state[1] = state[1] / max_distanceY  # 相對Y
+        norm_state[2] = state[2]  # 角度已經被正規化到[0,1]範圍
+        return norm_state
 
     def get_state(self, features: FeaturesFromSteam) -> np.ndarray:
         """
-        獲取當前狀態向量，包含自身單位和目標的資訊。
-        :return: numpy 陣列，例如 [B_lon, B_lat, B_heading, B_speed, A_lon, A_lat]
+        獲取當前狀態向量，包含自身單位和目標的相對位置資訊。
+        :return: numpy 陣列，例如 [相對X, 相對Y, 相對方向]
         """
         # 獲取自身單位（B 船）的資訊
         ac = self.get_unit_info_from_observation(features, self.ac_name)
         if ac is None:
             # 如果找不到單位，返回預設狀態
-            return torch.tensor([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=torch.float32, device=self.device)
+            return torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32, device=self.device)
 
         # 獲取目標單位（A 船）的資訊
         if self.target_name:
@@ -288,11 +289,33 @@ class MyAgent(BaseAgent):
         else:   
             target_lon, target_lat = 0.0, 0.0  # 未指定目標時的預設值
         
-        raw_state = np.array([float(ac.Lon), float(ac.Lat), float(ac.CH), float(ac.CS), target_lon, target_lat])
-        normalized_state = self.normalize_state(raw_state)
+        # 計算相對位置
+        ac_lon = float(ac.Lon)
+        ac_lat = float(ac.Lat)
         
-        # 將 NumPy 數組轉換為 PyTorch 張量並返回
-        # 返回狀態向量：[自身經度, 自身緯度, 自身航向, 自身航速, 目標經度, 目標緯度]
+        # 計算相對座標 (X,Y)，將經緯度差轉換為大致的平面座標
+        # 注意：這是簡化的轉換，對於小範圍有效
+        # X正方向為東，Y正方向為北
+        earth_radius = 6371  # 地球半徑（公里）
+        lon_scale = np.cos(np.radians(ac_lat))  # 經度在當前緯度的縮放因子
+        
+        # 計算相對 X 和 Y（公里）
+        dx = (target_lon - ac_lon) * np.pi * earth_radius * lon_scale / 180.0
+        dy = (target_lat - ac_lat) * np.pi * earth_radius / 180.0
+        
+        # 計算兩船的相對方向（不考慮船頭方向）
+        # 直接計算方位角並轉換到[0,1]範圍
+        relative_angle = np.arctan2(dy, dx) 
+        # 將角度從[-π, π]範圍轉換到[0, 1]範圍
+        normalized_angle = (relative_angle + np.pi) / (2 * np.pi)
+        
+        # 構建新的狀態向量：[相對X, 相對Y, 相對方向(0-1)]
+        raw_state = np.array([dx, dy, normalized_angle])
+        normalized_state = self.normalize_state(raw_state)
+        print("raw_state:", raw_state)
+        print("normalized_state:", normalized_state)
+        
+        # 返回狀態向量
         return normalized_state
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
     def get_reward(self, state: np.ndarray, next_state: np.ndarray) -> float:
@@ -307,18 +330,32 @@ class MyAgent(BaseAgent):
         
         self.logger.debug(f"距離變化: {distance:.4f} -> {next_distance:.4f}")
             
-        reward = 200 * (distance-next_distance)
+        reward = 30 * (distance-next_distance)
         # print(f"Reward: {reward}")
         if next_distance + 0.01 < self.best_distance:
             self.best_distance = next_distance   #如果當前距離比最佳距離近0.5公里 換他當最佳距離 然後給獎勵
-            reward += 1
+            reward += 0.5
             self.logger.debug(f"新的最佳距離: {self.best_distance:.4f}")
-        if next_distance - 0.03 > self.best_distance:
+        if next_distance - 0.05 > self.best_distance:
             self.worst_distance = next_distance
-            reward -= 0.1
+            reward -= 0.5
             self.logger.debug(f"新的最差距離: {self.worst_distance:.4f}")
         if next_distance < self.done_condition:
-            reward += 20
+            reward += 50
+        if next_distance < 0.2:
+            reward += 0.4
+        elif next_distance < 0.3:
+            reward += 0.3
+        elif next_distance < 0.4:
+            reward += 0.2
+        elif next_distance < 0.5:
+            reward += 0.1
+
+        if abs(next_state[0]) > 1:
+            reward -= 50
+        if abs(next_state[1]) > 1:
+            reward -= 50
+            
         # if next_distance > 0.25:
         #     reward -= 100
         # print(f"FinalReward: {reward:.4f}")
@@ -330,7 +367,6 @@ class MyAgent(BaseAgent):
 
     def apply_action(self, action: int, ac: Unit) -> str:
         """將動作轉換為 CMO 命令"""
-        step_size = 0.005
         lat, lon = float(ac.Lat), float(ac.Lon)
         if action == 0:  # 上
             heading = 0
