@@ -407,11 +407,16 @@ class Features(object):
         """
         Description:
             Return the missions of a side.
+            If no missions exist, return an empty list.
         """
-        missions = self.scen_dic["Scenario"]["Sides"]["Side"][side_index]["Missions"].get("Mission", [])
-        if not isinstance(missions, list):
-            missions = [missions]
-        return missions
+        try:
+            missions = self.scen_dic["Scenario"]["Sides"]["Side"][side_index]["Missions"].get("Mission", [])
+            if not isinstance(missions, list):
+                missions = [missions]
+            return missions
+        except (KeyError, TypeError, AttributeError):
+            # 如果 Missions 不存在或為空，返回空列表
+            return []
 
 class FeaturesFromSteam(Features):
     """
