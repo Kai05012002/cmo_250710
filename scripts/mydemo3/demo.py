@@ -18,8 +18,8 @@ from pycmo.lib.run_loop import run_loop_steam
 config = get_config()
 
 # MAIN LOOP
-scenario_name = "MyScenario1"
-player_side = "Taiwan"
+scenario_name = "T3_C3"
+player_side = "T"
 scenario_script_folder_name = "mydemo3"  # name of folder containing the lua script that the agent will use
 
 command_version = config["command_mo_version"]
@@ -36,7 +36,8 @@ env = CMOEnv(
         scen_ended_path=scen_ended_path,
 )
 
-ac_name = "Cheng Kung"
+# ac_name = "Cheng Kung"
+ac_name = "1101 Cheng Kung [Perry Class, Kuang Hua I]"
 
 agent = MyAgent1(player_side=player_side, ac_name=ac_name)
 
