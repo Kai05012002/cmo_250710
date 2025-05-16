@@ -52,6 +52,17 @@ def set_unit_heading_and_speed(side:str, unit_name:str, heading:float, speed:flo
 def set_unit_position(side:str, unit_name:str, latitude:float, longitude:float) -> str:
   return f"ScenEdit_SetUnit({{side = '{side}', name = '{unit_name}', latitude = {latitude}, longitude = {longitude}}})"
 
+def delete_unit(side:str, unit_name:str) -> str:
+  return f"ScenEdit_DeleteUnit({{side = '{side}', unitname = '{unit_name}'}})"
+
+def add_unit(type:str, unitname:str, dbid:int, side:str, Lat:float, Lon:float) -> str:
+  return f"ScenEdit_AddUnit({{type = '{type}', unitname = '{unitname}', dbid ={dbid}, side ='{side}', Lat='{Lat}',Lon='{Lon}'}})"
+
+# ScenEdit_AssignUnitToMission( "Bar #1", "Strike" )
+def set_unit_to_mission(unit_name:str, mission_name:str) -> str:
+  return f"ScenEdit_AssignUnitToMission('{unit_name}', '{mission_name}')"
+
+
 ARG_TYPES = {
   'no_op': ['NoneChoice'],
   'launch_aircraft': ['EnumChoice', 'EnumChoice', 'EnumChoice'],
