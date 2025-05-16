@@ -21,7 +21,17 @@ python .\scripts\MyDQN\demo.py --config=scripts/MyDQN/config.yaml
 
 # FeUdal
 python .\scripts\Feudal\demo.py --config=scripts/Feudal/config.yaml
+
+# MyNet_episode battle
+python .\scripts\MyNet_episode_battle\demo.py --config=scripts/MyNet_episode_battle/config.yaml
+
+# MyNet_episode
+python .\scripts\MyNet_episode\demo.py --config=scripts/MyNet_episode/config.yaml
+
+# MyNet_multi_battle
+python .\scripts\MyNet_multi_battle\demo.py --config=scripts/MyNet_multi_battle/config.yaml
 ```
+
 執行前請將輸入法改為英文，中文輸入會導致無法接收按鍵指令
 
 # 安裝
