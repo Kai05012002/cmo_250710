@@ -32,7 +32,7 @@ function ScenEdit_ExportScenarioToXML()
     scenario_xml = scenario_xml .. '</Scenario>'
 
     WriteData(scenario_xml, scenario.Title .. '.inst')
-    WriteData(scenario_xml, scenario.Title .. '.xml')
+    -- WriteData(scenario_xml, scenario.Title .. '.xml')
 end
 
 function ExportSidesToXML()
