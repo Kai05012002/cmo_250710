@@ -14,6 +14,7 @@ from pycmo.lib.features import Features, FeaturesFromSteam, Multi_Side_FeaturesF
 from pycmo.lib.protocol import Client, SteamClient, SteamClientProps
 from pycmo.configs.config import get_config
 from pycmo.lib.tools import cmo_steam_observation_file_to_xml
+from xml.parsers.expat import ExpatError
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -374,8 +375,10 @@ class CMOEnv():
                     obs = FeaturesFromSteam(cmo_steam_observation_file_to_xml(self.observation_path), self.player_side) 
                 return obs
             except TypeError:
+            except (TypeError, ExpatError):
                 get_obs_retries += 1
                 print("get_obs_retries: ",get_obs_retries)
+                # print("get_obs_retries: ",get_obs_retries)
                 sleep(0.0001)
                 if get_obs_retries > max_get_obs_retries:
                     raise TimeoutError("CMOEnv unable to get observation.")
