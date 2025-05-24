@@ -21,11 +21,7 @@ def run_loop_steam_new(env: CMOEnv,
     env.logger.setLevel(logging.INFO)
     # start the game
     env.reset(close_scenario_end_and_player_eval_messages=False)
-    print("sleep1")
     time.sleep(0.5)
-    print("sleep5")
-    # agent.reset_cmd = agent.get_reset_cmd(state.observation)
-    # print("reset_cmd = ", agent.reset_cmd)
     action = ""
     action = agent.reset()
     state = env.step(action)
@@ -46,11 +42,11 @@ def run_loop_steam_new(env: CMOEnv,
 
         action = agent.action(state.observation)
         dt_cmo = time.perf_counter() - t0_cmo
-        step_times_cmo.append(dt_cmo)
+        # step_times_cmo.append(dt_cmo)
 
 
-        if train:
-            print("train")
+        # if train:
+        #     print("train")
             # agent.train()
 
         total_steps += 1
