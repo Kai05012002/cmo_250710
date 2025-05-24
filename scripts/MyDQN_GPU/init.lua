@@ -3,7 +3,7 @@
 -- Save after running script and you will not have to run this script again
 
 -- Edit these variables as needed
-local pycmo_path = 'C:/Users/USER/Desktop/pycmopen/'
+local pycmo_path = 'C:/Users/irisc/Desktop/pycmopen/'
 local cmo_path = 'C:/Program Files (x86)/Steam/steamapps/common/Command - Modern Operations/ImportExport'
 local lua_script_foldername = pycmo_path .. 'scripts/MyDQN_GPU/'
 local pycmo_lib_lua_filename = pycmo_path .. 'lua/pycmo_lib.lua'

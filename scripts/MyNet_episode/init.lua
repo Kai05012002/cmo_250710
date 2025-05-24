@@ -5,7 +5,7 @@
 -- Edit these variables as needed
 local pycmo_path = 'C:/Users/irisc/Desktop/pycmopen/'
 local cmo_path = 'C:/Program Files (x86)/Steam/steamapps/common/Command - Modern Operations/ImportExport'
-local lua_script_foldername = pycmo_path .. 'scripts/MyDQN/'
+local lua_script_foldername = pycmo_path .. 'scripts/MyNet_episode/'
 local pycmo_lib_lua_filename = pycmo_path .. 'lua/pycmo_lib.lua'
 local agent_action_lua_filename = cmo_path .. '/agent_action.lua'
 local export_observation_lua_filename = 'export_observation.lua'

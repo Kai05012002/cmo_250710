@@ -93,7 +93,7 @@ def main():
     agent = MyAgent(player_side=player_side, ac_name=ac_name, target_name=target_name)
 
     # 執行主循環
-    run_loop_steam(env=env, agent=agent, max_steps=105000)
+    run_loop_steam(env=env, agent=agent, max_steps=200)
 
 if __name__ == "__main__":
     main()

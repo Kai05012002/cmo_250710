@@ -15,7 +15,26 @@ from copy import deepcopy
 import logging
 
 # 导入FeUdal模型
-from scripts.FeUdal.FeUdal_agent import Feudal_ManagerAgent, Feudal_WorkerAgent, FeUdalCritic
+from scripts.MyNet_episode.my_agent import my_Agent
+
+
+class ReplayBuffer:
+    """
+    簡單的環形緩衝區，用於離線隨機抽樣訓練。
+    """
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=capacity)
+
+    def push(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+
+    def sample(self, batch_size):
+        batch = random.sample(self.buffer, batch_size)
+        states, actions, rewards, next_states, dones = map(np.array, zip(*batch))
+        return states, actions, rewards, next_states, dones
+
+    def __len__(self):
+        return len(self.buffer)
 
 class MyAgent(BaseAgent):
     def __init__(self, player_side: str, ac_name: str, target_name: str = None):
@@ -37,11 +56,10 @@ class MyAgent(BaseAgent):
         # FeUdal网络参数
         class Args:
             def __init__(self):
-                self.manager_hidden_dim = 64
-                self.worker_hidden_dim = 64
+                self.hidden_dim = 128
                 self.state_dim_d = 3
-                self.embedding_dim_k = 16
                 self.n_actions = 4  # 上下左右
+                self.goal_dim = 3
 
         self.args = Args()
         self.input_size = 3  # [B_lon, B_lat, B_heading, B_speed, A_lon, A_lat]
@@ -50,22 +68,18 @@ class MyAgent(BaseAgent):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.logger.info(f"使用設備: {self.device}")
         
-        # 初始化FeUdal网络
-        self.manager = Feudal_ManagerAgent(self.input_size, self.args).to(self.device)
-        self.worker = Feudal_WorkerAgent(self.input_size, self.args).to(self.device)
-        self.target_worker = deepcopy(self.worker)
-        self.critic = FeUdalCritic(self.input_size, self.args).to(self.device)
-        self.target_critic = deepcopy(self.critic)
-        
-        self.manager_optimizer = torch.optim.Adam(self.manager.parameters(), lr=3e-4)
-        self.worker_optimizer = torch.optim.Adam(self.worker.parameters(), lr=3e-4)
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)  # 使用manager的critic部分
+        # 建立 policy_net 與 target_net
+        self.my_agent = my_Agent(self.input_size, self.args).to(self.device)
+        self.target_my_agent = deepcopy(self.my_agent)
+        self.target_my_agent.eval() # 設置為評估模式
+        self.my_agent_optimizer = torch.optim.Adam(self.my_agent.parameters(), lr=3e-4)
         
         # 修改記憶存儲方式，使用列表存儲完整的episode
         self.episode_memory = []  # 存儲當前episode的經驗
         self.completed_episodes = []  # 存儲已完成的episodes
         self.max_episodes = 32  # 最多保存的episode數量
-        
+
+
         # 基本超參數
         self.gamma = 0.99
         self.lr = 5e-4
@@ -79,27 +93,21 @@ class MyAgent(BaseAgent):
         self.done_condition = 0.1
 
         # 初始化隐藏状态
-        self.manager_hidden = self.manager.init_hidden()
-        self.worker_hidden = self.worker.init_hidden()
+        self.manager_hidden, self.worker_hidden = self.my_agent.init_hidden()
 
-
-        self.single_past_goals = []
-        self.batch_past_goals = []
 
         self.best_distance = 1000000
         self.worst_distance = 0
         self.total_reward = 0
 
-                # 初始化緩衝區
-        # self.replay_buffer = ReplayBuffer(capacity=100000)
+        # 初始化緩衝區
+        self.replay_buffer = ReplayBuffer(capacity=100000)
         self.total_steps = 0
         self.epsilon = 1.0
 
         # 用於解決 next_state 延遲的屬性
         self.prev_state = None
         self.prev_action = None
-        self.prev_goal = None
-        self.prev_critic_value = None
 
         # 初始化訓練統計記錄器（如果有的話）
         self.stats_logger = Logger()
@@ -186,12 +194,11 @@ class MyAgent(BaseAgent):
             self.episode_reward += reward
             
             # 將經驗添加到當前episode的記憶中
-            self.episode_memory.append((self.prev_state, current_state, self.prev_action, reward, done, self.prev_goal, self.prev_critic_value))
+            self.episode_memory.append((self.prev_state, current_state, self.prev_action, reward, done))
             
             # 檢查遊戲是否結束
             if done or self.episode_step > self.max_episode_steps:
                 self.episode_done = True
-                self.episode_count += 1
                 self.logger.info(f"遊戲結束! 總獎勵: {self.episode_reward:.4f}")
                 
                 # 將完成的episode添加到已完成episodes列表中
@@ -202,49 +209,33 @@ class MyAgent(BaseAgent):
                         self.completed_episodes.pop(0)
                 
                 # 在遊戲結束時進行訓練
-                worker_loss = 0
-                manager_loss = 0
-                critic_loss = 0
+                loss = 0
                 for _ in range(10):
-                    epiworker_loss, epimanager_loss, epicritic_loss = self.train()
-                    worker_loss = worker_loss + epiworker_loss
-                    manager_loss = manager_loss + epimanager_loss
-                    critic_loss = critic_loss + epicritic_loss
-                worker_loss = worker_loss / 10
-                manager_loss = manager_loss / 10
-                critic_loss = critic_loss / 10
-
+                    episode_loss = self.train()
+                    loss = loss + episode_loss
+                loss = loss / 10
+                # 重置遊戲狀態
                 if self.episode_count % 5 == 0:
-                    self.logger.info(f"步數: {self.total_steps}, 距離: {distance:.4f}, 損失: {worker_loss:.4f}, 總獎勵: {self.total_reward:.4f}")
+                    self.logger.info(f"步數: {self.total_steps}, 距離: {distance:.4f}, 損失: {loss:.4f}, 總獎勵: {self.total_reward:.4f}")
                     self.stats_logger.log_stat("distance", distance, self.total_steps)
                     self.stats_logger.log_stat("best_distance", self.best_distance, self.total_steps)
-                    self.stats_logger.log_stat("worker_loss", worker_loss, self.total_steps)
-                    self.stats_logger.log_stat("manager_loss", manager_loss, self.total_steps)
-                    self.stats_logger.log_stat("critic_loss", critic_loss, self.total_steps)
+                    self.stats_logger.log_stat("loss", loss, self.total_steps)
                     self.stats_logger.log_stat("episode_return", self.episode_reward, self.total_steps)
-
-                # 重置遊戲狀態
                 return self.reset()
             
-        self.logger.debug("訓練完成")
+        
         
         # 選擇動作
-        state_tensor = torch.tensor(current_state, dtype=torch.float32).unsqueeze(0).to(self.device)
+        state_tensor = torch.tensor(current_state, dtype=torch.float32, device=self.device).unsqueeze(0)   # → [1, feat]
+        state_tensor = state_tensor.unsqueeze(1)       # → [seq_len=1, batch=1, feat]
+
         t0_rl = time.perf_counter()
         with torch.no_grad():
-            # Manager生成目标
-            _, goal, self.manager_hidden = self.manager(state_tensor, self.manager_hidden)
-            
-            # Worker根据目标选择动作
-            q_values, self.worker_hidden = self.worker(
-                state_tensor, 
-                self.worker_hidden,
-                goal
-            )
-            # Critic估計狀態值
-            critic_value = self.critic(state_tensor)
+            q_values, (self.manager_hidden, self.worker_hidden) = \
+                self.my_agent(state_tensor, (self.manager_hidden, self.worker_hidden))
         dt_rl = time.perf_counter() - t0_rl
         self.step_times_rl.append(dt_rl)
+        
         if random.random() < self.epsilon:
             action = random.randint(0, self.args.n_actions - 1)
             self.logger.debug(f"隨機選擇動作: {action}")
@@ -259,8 +250,6 @@ class MyAgent(BaseAgent):
         # 更新前一步資料
         self.prev_state = current_state
         self.prev_action = action
-        self.prev_goal = goal
-        self.prev_critic_value = critic_value
         self.total_steps += 1
         self.episode_step += 1
 
@@ -269,8 +258,7 @@ class MyAgent(BaseAgent):
         self.logger.debug(f"更新epsilon: {self.epsilon:.4f}")
 
         if self.total_steps % self.update_freq == 0:
-            self.target_worker.load_state_dict(self.worker.state_dict())
-            self.target_critic.load_state_dict(self.critic.state_dict())
+            self.target_my_agent.load_state_dict(self.my_agent.state_dict())
         
         return action_cmd
     
@@ -281,7 +269,7 @@ class MyAgent(BaseAgent):
         norm_state[0] = state[0] / max_distanceX  # 相對X
         norm_state[1] = state[1] / max_distanceY  # 相對Y
         norm_state[2] = state[2]  # 角度已經被正規化到[0,1]範圍
-        return norm_state  
+        return norm_state
 
     def get_state(self, features: FeaturesFromSteam) -> np.ndarray:
         """
@@ -350,10 +338,10 @@ class MyAgent(BaseAgent):
         # else:
         #     reward = 10*(-next_distance)  # 放大距離變化
         
-        self.logger.debug(f"距離變化: {distance:.4f} -> {next_distance:.4f}")
+        # self.logger.debug(f"距離變化: {distance:.4f} -> {next_distance:.4f}")
             
         reward = 10 * (distance-next_distance)
-        # print(f"Reward: {reward}")
+        print(f"Reward: {reward}")
         if next_distance + 0.01 < self.best_distance:
             self.best_distance = next_distance   #如果當前距離比最佳距離近0.5公里 換他當最佳距離 然後給獎勵
             reward += 0.5
@@ -364,14 +352,14 @@ class MyAgent(BaseAgent):
             self.logger.debug(f"新的最差距離: {self.worst_distance:.4f}")
         if next_distance < self.done_condition:
             reward += 30
-        if next_distance < 0.2:
-            reward += 0.25
-        elif next_distance < 0.3:
-            reward += 0.2
-        elif next_distance < 0.4:
-            reward += 0.15
-        elif next_distance < 0.5:
-            reward += 0.1
+        # if next_distance < 0.2:
+        #     reward += 0.25
+        # elif next_distance < 0.3:
+        #     reward += 0.2
+        # elif next_distance < 0.4:
+        #     reward += 0.15
+        # elif next_distance < 0.5:
+        #     reward += 0.1
 
         if abs(next_state[0]) > 1:
             reward -= 10
@@ -406,7 +394,7 @@ class MyAgent(BaseAgent):
         )
 
     def train(self):
-        """訓練FeUdal網路"""
+        """訓練MyNet網路"""
         # 檢查是否有足夠的episodes進行訓練
         if len(self.completed_episodes) < 1:
             self.logger.warning("沒有足夠的episodes進行訓練")
@@ -418,7 +406,7 @@ class MyAgent(BaseAgent):
         batch = episode
             
         # 解包批次數據
-        states, next_states, actions, rewards, dones, goals, critic_values = zip(*batch)
+        states, next_states, actions, rewards, dones = zip(*batch)
         
         # 轉換為張量
         states = torch.tensor(states, dtype=torch.float32).to(self.device)
@@ -427,120 +415,60 @@ class MyAgent(BaseAgent):
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
         
-        # 修复：直接将张量堆叠而不使用numpy
-        goals_tensor = torch.stack([g.detach() for g in goals]).to(self.device)
-        critic_values_tensor = torch.stack([cv.detach() for cv in critic_values]).to(self.device)
-        
         # 獲取實際的批次大小
         actual_batch_size = states.size(0)
 
+        #----------------------------- Calculate loss -----------------------------------
         
-        self.worker_hidden = self.worker.init_hidden()
-        #----------------------------- Calculate manager loss -----------------------------------
-        
-        # # 为训练创建新的隐藏状态，批次大小为实际批次大小
-        # train_manager_hidden = (
-        #     self.manager_hidden[0].expand(actual_batch_size, -1),
-        #     self.manager_hidden[1].expand(actual_batch_size, -1)
-        # )
-        # train_worker_hidden = (
-        #     self.worker_hidden[0].expand(actual_batch_size, -1),
-        #     self.worker_hidden[1].expand(actual_batch_size, -1)
-        # )
-        current_goals = []
-        wh0 = self.manager.init_hidden()
-        for t in range(actual_batch_size):
-            _, goal, wh0 = self.manager(states[t].unsqueeze(0), wh0)
-            current_goals.append(goal)
-        current_goals = torch.stack(current_goals).squeeze(1)
-        
-        current_values = self.target_critic(states)
-
-        state_diff = next_states - states
-        returns = compute_returns(rewards, self.gamma, current_values, dones)
-        advantages = returns - current_values
-        # 標準化
-        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        temp_state_diff = F.normalize(state_diff, dim=-1, p=2)
-        temp_goals = F.normalize(current_goals, dim=-1, p=2)
-        cos_sim = F.cosine_similarity(temp_state_diff, temp_goals, dim=-1)
-
-        # Manager更新
-        manager_loss = -(advantages.detach() * cos_sim).mean()
-        
-        self.manager_optimizer.zero_grad()
-        manager_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.manager.parameters(), max_norm=5.0)
-        self.manager_optimizer.step()
-
-        #----------------------------- Calculate worker loss -----------------------------------
-        wh0 = self.worker.init_hidden()
         current_q = []
         target_q = []
+        mh0, wh0 = self.my_agent.init_hidden()
+        # states shape: [T, feat]  ->  [T, 1, feat]  (seq_len, batch, feat)
+        seq = states.unsqueeze(1)
+        q_seq, _ = self.my_agent(seq, (mh0, wh0))     # q_seq: [T, 1, n_actions]
 
-        for t in range(actual_batch_size):
-            q, wh0 = self.worker(states[t].unsqueeze(0), wh0, current_goals[t].detach())
-            current_q.append(q.squeeze(0).gather(0, actions[t]))
-        current_q = torch.stack(current_q)
+        # 取動作 Q(s,a)
+        act_idx = actions.view(actual_batch_size, 1, 1)               # [T, 1, 1]
+        current_q = q_seq.gather(2, act_idx).squeeze(2)   # [T, 1] -> 再 squeeze
         
-        
-        mh1 = self.manager.init_hidden()
-        wh1 = self.worker.init_hidden()
+
+        mh1, wh1 = self.my_agent.init_hidden()
         with torch.no_grad():
-            for t in range(actual_batch_size):
-                _, next_goal, mh1 = self.manager(next_states[t].unsqueeze(0), mh1)
-                next_q, wh1 = self.target_worker(next_states[t].unsqueeze(0), wh1, next_goal)
-                next_q = next_q.max(1)[0]
-                target = rewards + (1 - dones) * self.gamma * next_q
-                target_q.append(target.squeeze(0))
-        target_q = torch.stack(target_q)
+            next_q_seq, _ = self.target_my_agent(next_states.unsqueeze(1), (mh1, wh1))
+            # max over actions dim=2, keepdim=False -> [T,1]
+            target_q = rewards + (1-dones)*self.gamma*next_q_seq.max(2)[0]
+        self.logger.debug("forward完成")
         
-        
-        
-        self.worker_optimizer.zero_grad()
-        worker_loss = 0.5 * (current_q - target_q).pow(2).mean()
-        worker_loss = torch.clamp(worker_loss, max=10.0)
-        worker_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.worker.parameters(), max_norm=5.0)
-        self.worker_optimizer.step()
-
-        #----------------------------- Calculate critic loss -----------------------------------
-        critic_loss = 0.5 * (advantages ** 2).mean()
-
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=5.0)
-        self.critic_optimizer.step()
-
+        self.my_agent_optimizer.zero_grad()
+        loss = F.mse_loss(current_q, target_q.detach())
+        loss = torch.clamp(loss, max=10.0)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.my_agent.parameters(), max_norm=5)
+        self.my_agent_optimizer.step()
+         # 記錄訓練統計數據  
         
         # 每10步記錄一次
         # if self.total_steps % 10 == 0:
-        # total_loss = manager_loss.item() + worker_loss.item()
-        # self.logger.info(f"步數: {self.total_steps}, 距離: {distance:.4f}, 損失: {total_loss:.4f}, 總獎勵: {self.total_reward:.4f}")
-        # self.stats_logger.log_stat("distance", distance.item(), self.total_steps)
-        # self.stats_logger.log_stat("manager_loss", manager_loss.item(), self.total_steps)
-        # self.stats_logger.log_stat("worker_loss", worker_loss.item(), self.total_steps)
-        # self.stats_logger.log_stat("return", self.total_reward, self.total_steps)
-        return worker_loss.item(), manager_loss.item(), critic_loss.item()
+
+        self.logger.debug("訓練完成")
+
         # if self.total_steps % self.update_freq == 0:
         #     self.manager_hidden = self.manager.init_hidden()
         #     self.worker_hidden = self.worker.init_hidden()
         #     self.logger.debug(f"更新FeUdal網路，步數: {self.total_steps}")
+        return loss.item()
     
     def reset(self):
         """重置遊戲狀態，準備開始新的episode"""
         self.episode_init = True
         self.best_distance = 1000000
+        self.worst_distance = 0
         self.prev_state = None
         self.prev_action = None
-        self.prev_goal = None
-        self.prev_critic_value = None
         self.episode_step = 0
         self.episode_done = False
         self.episode_reward = 0
-        self.manager_hidden = self.manager.init_hidden()
-        self.worker_hidden = self.worker.init_hidden()
+        self.manager_hidden, self.worker_hidden = self.my_agent.init_hidden()
         # 清空當前episode的記憶
         self.episode_memory = []
         self.logger.info("重置遊戲狀態，準備開始新的episode")

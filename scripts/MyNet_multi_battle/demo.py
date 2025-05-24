@@ -11,6 +11,7 @@ from pycmo.configs.config import get_config
 from pycmo.env.cmo_env import CMOEnv
 from pycmo.lib.protocol import SteamClientProps
 from pycmo.lib.run_loop import run_loop_steam
+from pycmo.lib.run_loop_new import run_loop_steam_new
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """
@@ -82,7 +83,8 @@ def main():
 
     # 初始化環境
     env = CMOEnv(
-        player_side=player_side,
+        player_side=None,
+        side_list=['T','C'],
         steam_client_props=steam_client_props,
         observation_path=observation_path,
         action_path=action_path,
@@ -93,7 +95,7 @@ def main():
     agent = MyAgent(player_side=player_side, ac_name=ac_name, target_name=target_name)
 
     # 執行主循環
-    run_loop_steam(env=env, agent=agent, max_steps=105000)
+    run_loop_steam_new(env=env, agent=agent, max_steps=1001)
 
 if __name__ == "__main__":
     main()

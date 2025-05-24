@@ -181,7 +181,7 @@ def window_exists(window_name:str, delay:float|None=None) -> bool:
     
 def cmo_steam_observation_file_to_xml(file_path:str) -> str or None:
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             observation_file_contents = f.read()
     except FileNotFoundError:
         return None

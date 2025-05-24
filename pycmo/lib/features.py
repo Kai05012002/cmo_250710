@@ -216,9 +216,11 @@ class Features(object):
             (list) a list of the units of the side.
         """
         unit_ids = []
-        if side_name == None or 'ActiveUnits' not in self.scen_dic["Scenario"].keys():
+        if side_name is None or 'ActiveUnits' not in self.scen_dic["Scenario"] or self.scen_dic["Scenario"]["ActiveUnits"] is None:
             return unit_ids
         for unit_type in self.scen_dic["Scenario"]["ActiveUnits"].keys():
+            if unit_type != "Ship":
+                continue
             active_units = self.scen_dic["Scenario"]["ActiveUnits"][unit_type]
             if not isinstance(self.scen_dic["Scenario"]["ActiveUnits"][unit_type], list):
                 active_units = [self.scen_dic["Scenario"]["ActiveUnits"][unit_type]]
@@ -373,7 +375,7 @@ class Features(object):
             print(f" 錯誤: `side_index` ({side_index}) 超過可用範圍 ({len(sides)})。")
             return []
         if "Contacts" not in sides[side_index] or sides[side_index]["Contacts"] is None:
-            print(f" `{sides[side_index]['Name']}` 沒有任何 `Contacts`。")
+            # print(f" `{sides[side_index]['Name']}` 沒有任何 `Contacts`。")
             return []
         contacts = sides[side_index]["Contacts"].get("Contact", [])
         # 確保 contacts 是 list
@@ -450,3 +452,62 @@ class FeaturesFromSteam(Features):
         self.side_ = self.get_side_properties(player_side_index)
         self.contacts = self.get_side_contacts(player_side_index)
         self.missions = self.get_missions(player_side_index)
+
+
+class Multi_Side_FeaturesFromSteam(Features):
+    """
+    Renders feature layers from a Command: Modern Operations scenario XML into named tuples for multiple sides.
+    """
+    def __init__(self, xml:str, player_sides:list[str]) -> None:
+        """
+        Description:
+            Initialize a Features object to hold observations for multiple player sides.
+
+        Keyword Arguments:
+            xml: The XML string content containing the game observations.
+            player_sides: A list of names for the player sides to process.
+        
+        Returns:
+            None
+        """
+        try:         
+            self.scen_dic = xmltodict.parse(xml) # our scenario xml is now in 'dic'
+        except FileNotFoundError: # TODO: Consider changing to xmltodict.expat.ExpatError or general Exception if xml is string content
+            raise FileNotFoundError("Unable to parse scenario xml.")
+        # except Exception as e: # Catch other XML parsing errors
+        #     raise ValueError(f"Error parsing XML content: {e}")
+
+        self.logger = logging.getLogger(__name__)
+        
+        # get features for multiple sides
+        self.player_sides = player_sides
+        self.meta = self.get_meta() # Return the scenario-level information of the scenario
+
+        self.units: dict[str, list[Unit]] = {}
+        self.sides_: dict[str, Side] = {}
+        self.contacts: dict[str, list[Contact]] = {}
+        self.missions: dict[str, list[Mission]] = {}
+
+        all_scenario_sides = self.get_sides() # Get all side names defined in the scenario
+
+        for side_name in self.player_sides:
+            if side_name not in all_scenario_sides:
+                self.logger.warning(f"Requested player side '{side_name}' not found in scenario. Skipping.")
+                continue
+            
+            try:
+                side_index = all_scenario_sides.index(side_name)
+            except ValueError:
+                # This should not happen if side_name is in all_scenario_sides, but as a safeguard:
+                self.logger.error(f"Could not find index for side '{side_name}' even though it was listed in all_scenario_sides. Skipping.")
+                continue
+
+            self.units[side_name] = self.get_side_units(side_name)
+            # try:
+            self.sides_[side_name] = self.get_side_properties(side_index)
+            self.contacts[side_name] = self.get_side_contacts(side_index)
+            self.missions[side_name] = self.get_missions(side_index)
+            # except KeyError as e:
+            #     self.logger.error(f"KeyError while fetching data for side '{side_name}' (index {side_index}): {e}. Some data might be missing.")
+            # except Exception as e:
+            #     self.logger.error(f"Unexpected error while fetching data for side '{side_name}' (index {side_index}): {e}. Some data might be missing.")

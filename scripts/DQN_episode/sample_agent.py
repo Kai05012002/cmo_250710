@@ -119,6 +119,8 @@ class MyAgent(BaseAgent):
         self.episode_done = False
         self.episode_reward = 0
 
+        self.step_times_rl: list[float] = []
+
     def get_unit_info_from_observation(self, features: FeaturesFromSteam, unit_name: str) -> Unit:
         """
         從觀察中獲取指定單位的資訊。
@@ -207,8 +209,11 @@ class MyAgent(BaseAgent):
                         self.completed_episodes.pop(0)
                 
                 # 在遊戲結束時進行訓練
+                loss = 0
                 for _ in range(10):
-                    loss = self.train()
+                    episode_loss = self.train()
+                    loss = loss + episode_loss
+                loss = loss / 10
                 # 重置遊戲狀態
                 if self.episode_count % 5 == 0:
                     self.logger.info(f"步數: {self.total_steps}, 距離: {distance:.4f}, 損失: {loss:.4f}, 總獎勵: {self.total_reward:.4f}")
@@ -222,10 +227,12 @@ class MyAgent(BaseAgent):
         
         # 選擇動作
         state_tensor = torch.tensor(current_state, dtype=torch.float32).unsqueeze(0).to(self.device)
+        t0_rl = time.perf_counter()
         with torch.no_grad():
             # 使用 RNN 模型選擇動作
             q_values, self.rnn_agent_hidden = self.rnn_agent(state_tensor, self.rnn_agent_hidden)
-        
+        dt_rl = time.perf_counter() - t0_rl
+        self.step_times_rl.append(dt_rl)
         if random.random() < self.epsilon:
             action = random.randint(0, self.args.n_actions - 1)
             self.logger.debug(f"隨機選擇動作: {action}")
@@ -330,35 +337,32 @@ class MyAgent(BaseAgent):
         
         self.logger.debug(f"距離變化: {distance:.4f} -> {next_distance:.4f}")
             
-        reward = 30 * (distance-next_distance)
+        reward = 10 * (distance-next_distance)
         # print(f"Reward: {reward}")
         if next_distance + 0.01 < self.best_distance:
             self.best_distance = next_distance   #如果當前距離比最佳距離近0.5公里 換他當最佳距離 然後給獎勵
             reward += 0.5
             self.logger.debug(f"新的最佳距離: {self.best_distance:.4f}")
-        if next_distance - 0.05 > self.best_distance:
+        if next_distance - 0.01 > self.best_distance:
             self.worst_distance = next_distance
             reward -= 0.5
             self.logger.debug(f"新的最差距離: {self.worst_distance:.4f}")
         if next_distance < self.done_condition:
-            reward += 50
+            reward += 30
         if next_distance < 0.2:
-            reward += 0.4
+            reward += 0.25
         elif next_distance < 0.3:
-            reward += 0.3
-        elif next_distance < 0.4:
             reward += 0.2
+        elif next_distance < 0.4:
+            reward += 0.15
         elif next_distance < 0.5:
             reward += 0.1
 
         if abs(next_state[0]) > 1:
-            reward -= 50
+            reward -= 10
         if abs(next_state[1]) > 1:
-            reward -= 50
+            reward -= 10
             
-        # if next_distance > 0.25:
-        #     reward -= 100
-        # print(f"FinalReward: {reward:.4f}")
             self.logger.debug("達到目標條件!")
         reward -= 0.01
         self.logger.debug(f"獎勵: {reward:.4f}")
@@ -367,7 +371,6 @@ class MyAgent(BaseAgent):
 
     def apply_action(self, action: int, ac: Unit) -> str:
         """將動作轉換為 CMO 命令"""
-        lat, lon = float(ac.Lat), float(ac.Lon)
         if action == 0:  # 上
             heading = 0
         elif action == 1:  # 下
@@ -430,7 +433,9 @@ class MyAgent(BaseAgent):
         
         self.rnn_agent_optimizer.zero_grad()
         loss = 0.5 * (current_q - target_q).pow(2).mean()
+        loss = torch.clamp(loss, max=10.0)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.rnn_agent.parameters(), max_norm=5)
         self.rnn_agent_optimizer.step()
          # 記錄訓練統計數據  
         

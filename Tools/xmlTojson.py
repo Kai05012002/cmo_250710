@@ -5,7 +5,7 @@ import re
 def convert_scenario_to_json():
     # 读取原始文件
     print("test")
-    with open('D:\open\SteamLibrary\steamapps\common\Command - Modern Operations\ImportExport\MyScenario1.inst', 'r', encoding='utf-8') as file:
+    with open('C:/Program Files (x86)/Steam/steamapps/common/Command - Modern Operations/ImportExport/T3_C3.inst', 'r', encoding='utf-8') as file:
         content = file.read()
     
     # 解析外层JSON
@@ -21,7 +21,7 @@ def convert_scenario_to_json():
     scenario_json = json.dumps(xml_dict, indent=2, ensure_ascii=False)
     print("test")
     # 保存转换后的JSON到新文件
-    with open('MyScenario1.json', 'w', encoding='utf-8') as outfile:
+    with open('T3_C3.json', 'w', encoding='utf-8') as outfile:
         outfile.write(scenario_json)
     
     return xml_dict

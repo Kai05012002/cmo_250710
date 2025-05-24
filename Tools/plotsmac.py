@@ -139,15 +139,21 @@ file_paths = [
             #   'logs/run_20250409_043516/stats.json',
             #   'logs/run_20250414_052243/stats.json',
             #   'logs/run_20250416_031716/stats.json',
-              'logs/run_20250421_050328/stats.json',
-              'logs/run_20250423_031112/stats.json',
-              'logs/run_20250423_060445/stats.json',
-              'logs/run_20250423_142833/stats.json'
+            #   'logs/run_20250428_020031/stats.json',
+            #   'logs/run_20250430_015530/stats.json',
+            #   'logs/run_20250430_051852/stats.json',
+            #   'logs/run_20250430_053312/stats.json',
+            #   'logs/run_20250504_235008/stats.json',
+            #   'logs/run_20250504_190944/stats.json',
+            #   'logs/run_20250504_221035/stats.json',
+            'Logs/DQN_I5_CPU/stats.json',
+            'Logs/DQN_R9_GPU/stats.json',
+            'Logs/DQN_R9_GPU_batch/stats.json',
               ]
 
 data_list = load_data(file_paths)
-selected_keys = ['distance','episode_return','loss']
-#selected_keys = ['battle_won_mean', 'loss']
+# selected_keys = ['distance','episode_return','loss','best_distance','worker_loss','manager_loss','critic_loss']
+selected_keys = ['distance', 'loss', 'return']
 name_list = [ 
                 # "NO_Reset",
                 # "CPU_4X",
@@ -156,10 +162,16 @@ name_list = [
                 # "Feudal_5X",
                 # "Feudal_5X+singleEpisode_beta",
                 # "Feudal_5X+singleEpisode_beta_2",
-                "RDQN_5X+singleEpisode_beta",
-                "RDQN_5X+singleEpisode_beta_2",
-                "RDQN_5X+singleEpisode_beta_3",
-                "RDQN_5X+singleEpisode_beta_4"
+                # "RDQN+singleEpisode",
+                # "MyNet+singleEpisode",
+                # "MyNet+singleEpisode_1",
+                # "MyNet+singleEpisode_2",
+                # "bayesian",
+                # "FeUdal",
+                # "DRQN",
+                "DQN_I5_CPU",
+                "DQN_R9_GPU",
+                "DQN_R9_GPU_batch",
             ]
 
 battle_name = 'Model_1'

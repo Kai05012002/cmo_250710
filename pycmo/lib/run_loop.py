@@ -9,7 +9,7 @@ from pycmo.env.cmo_env import CPEEnv, CMOEnv, StepType # CPE environment, functi
 # agents
 from pycmo.agents.base_agent import BaseAgent
 # auxiliary functions
-import threading, time
+import threading, time, statistics, json, os
 from pycmo.lib.tools import print_env_information, clean_up_steps, ticks_to_unix, parse_datetime, parse_utc
 import logging
 
@@ -89,12 +89,16 @@ def run_loop_steam(env: CPEEnv | CMOEnv,
     # start the game
     state = env.reset(close_scenario_end_and_player_eval_messages=False)
     action = ""
+    action = agent.reset()
+    state = env.step(action)
 
     # Configure a limit for the maximum number of steps
     total_steps = 0
-
+    step_times_cmo = []
+    step_times_rl = []
     # main loop
     while (not max_steps) or (total_steps < max_steps):
+        t0_cmo = time.perf_counter()
         env.logger.debug("run_loop_steam")
         print_env_information(state.step_id, parse_utc(int(state.observation.meta.Time)), action, state.reward, state.reward)
         # perform random actions or choose the action
@@ -105,7 +109,11 @@ def run_loop_steam(env: CPEEnv | CMOEnv,
             action = env.action_space.sample() # sample random action if no agent is loaded
         env.logger.debug("loop_action")
         # get new state and observation, rewards, discount
+        # 2) 測包含 env.step 的整段步驟
+        
         state = env.step(action)
+        dt_cmo = time.perf_counter() - t0_cmo
+        step_times_cmo.append(dt_cmo)
         env.logger.debug("loop_step")
         total_steps += 1
         if state.step_type == StepType(2) or env.check_game_ended():
@@ -114,4 +122,25 @@ def run_loop_steam(env: CPEEnv | CMOEnv,
             action = ''
             agent.reset()
         env.logger.debug("loop_end")
+
+    
     env.end_game()
+    # ---- 新增：寫出 JSON 檔，結構同 GAT資料.txt ----
+    step_times_rl = agent.step_times_rl
+    if step_times_rl and step_times_cmo:
+        result = {
+            "RL_only": {
+                "mean": statistics.mean(step_times_rl),
+                "std":  statistics.stdev(step_times_rl) if len(step_times_rl) > 1 else 0.0
+            },
+            "RL+CMO": {
+                "mean": statistics.mean(step_times_cmo),
+                "std":  statistics.stdev(step_times_cmo) if len(step_times_cmo) > 1 else 0.0
+            },
+            "step_times_rl": step_times_rl,
+            "step_times_cmo": step_times_cmo
+        }
+        outfile = f"GAT資料_{int(time.time())}.txt"
+        with open(outfile, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        env.logger.info(f"[run_loop_steam] 時間統計已寫入: {os.path.abspath(outfile)}")

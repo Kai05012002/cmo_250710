@@ -10,10 +10,11 @@ from time import sleep
 import logging
 
 from pycmo.lib.actions import AvailableFunctions
-from pycmo.lib.features import Features, FeaturesFromSteam
+from pycmo.lib.features import Features, FeaturesFromSteam, Multi_Side_FeaturesFromSteam
 from pycmo.lib.protocol import Client, SteamClient, SteamClientProps
 from pycmo.configs.config import get_config
 from pycmo.lib.tools import cmo_steam_observation_file_to_xml
+from xml.parsers.expat import ExpatError
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -234,18 +235,21 @@ class CMOEnv():
     A wrapper that extracts observations from and sends actions to Command: Modern Operations (Steam).
     """
     def __init__(self,
-                 player_side: str,
                  steam_client_props:SteamClientProps,
                  observation_path: str, 
                  action_path: str,
                  scen_ended_path: str,
                  pycmo_lua_lib_path: str | None = None,
+                 player_side: str = None,
+                 side_list: list[str] = None,
                  max_resets: int = 20):
         self.client = SteamClient(props=steam_client_props) # initialize a client to send data to the game
         if not self.client.connect(): # connect the client to the game
             raise FileNotFoundError("No running instance of Command to connect to.")
         
+        
         self.player_side = player_side # the player's side, this is used to identify units that the player can actually control
+        self.side_list = side_list #
         
         self.observation_path = observation_path # the path to the folder containing the xml steps files. These steps files are used to generate observations.
         self.action_path = action_path
@@ -301,11 +305,10 @@ class CMOEnv():
             initial_observation = self.get_obs()
             if not initial_observation:
                 raise FileNotFoundError("Cannot find observation file to reset the environment.")
-            
             self.current_observation = initial_observation
-            reward = initial_observation.side_.TotalScore
+            reward = 0 #initial_observation.side_.TotalScore
             self.step_id = 0
-            self.action_space = AvailableFunctions(features=self.current_observation)
+            # self.action_space = AvailableFunctions(features=self.current_observation)
 
             self.client.start_scenario()
 
@@ -337,8 +340,8 @@ class CMOEnv():
         # if the game has ended, then save the timestep information with a different step type
             if self.check_game_ended():
                 observation = self.obs
-                reward = observation.side_.TotalScore
-                self.action_space.refresh(features=observation)
+                reward = 0#observation.side_.TotalScore
+                # self.action_space.refresh(features=observation)
                 return TimeStep(self.step_id, StepType(2), reward, observation)
             elif self.inst_changed:
                 break
@@ -348,16 +351,16 @@ class CMOEnv():
         if new_observation.meta.Time == self.current_observation.meta.Time:
             self.logger.debug(f"Time is not advancing. Old time: {self.current_observation.meta.Time}, New time: {new_observation.meta.Time}. Moving forward with old state.")
             observation = self.current_observation
-            reward = self.current_observation.side_.TotalScore
+            reward = 0#self.current_observation.side_.TotalScore
             return TimeStep(self.step_id, StepType(1), reward, observation)            
         self.logger.debug("6")
         self.step_id += 1
         observation = new_observation
-        reward = observation.side_.TotalScore
+        reward = 0 #observation.side_.TotalScore
         new_timestep = TimeStep(self.step_id, StepType(1), reward, observation)
         self.logger.debug("7")
         self.current_observation = new_observation
-        self.action_space.refresh(features=self.current_observation)
+        # self.action_space.refresh(features=self.current_observation)
         self.logger.debug("8")
         return new_timestep
 
@@ -366,11 +369,14 @@ class CMOEnv():
         max_get_obs_retries = 10000
         while True:
             try:
-                obs = FeaturesFromSteam(cmo_steam_observation_file_to_xml(self.observation_path), self.player_side) 
+                if self.side_list:
+                    obs = Multi_Side_FeaturesFromSteam(cmo_steam_observation_file_to_xml(self.observation_path), self.side_list)
+                elif self.player_side:
+                    obs = FeaturesFromSteam(cmo_steam_observation_file_to_xml(self.observation_path), self.player_side) 
                 return obs
-            except TypeError:
+            except (TypeError, ExpatError):
                 get_obs_retries += 1
-                print("get_obs_retries: ",get_obs_retries)
+                # print("get_obs_retries: ",get_obs_retries)
                 sleep(0.0001)
                 if get_obs_retries > max_get_obs_retries:
                     raise TimeoutError("CMOEnv unable to get observation.")
