@@ -37,7 +37,7 @@ def load_data(file_paths):
     
     return all_data, file_names
 
-def smooth(y, alpha=0.1, sigma=2):
+def smooth(y, alpha=0.1, sigma=1):
     def exp_moving_average(y):
         ema = np.zeros_like(y)
         ema[0] = y[0]
@@ -227,11 +227,33 @@ class LivePlotter:
         # 重置變量
         self.experiment_vars = []
         
+        # 判斷是否需要滾動
+        if len(self.name_list) > 10:
+            # 創建滾動條和框架
+            canvas = tk.Canvas(self.experiment_frame, height=200)
+            scrollbar = ttk.Scrollbar(self.experiment_frame, orient="vertical", command=canvas.yview)
+            scrollable_frame = ttk.Frame(canvas)
+            
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+            
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+            
+            target_frame = scrollable_frame
+        else:
+            target_frame = self.experiment_frame
+        
         # 創建新的選擇框
         for i, name in enumerate(self.name_list):
             var = tk.BooleanVar(value=True)
             self.experiment_vars.append(var)
-            cb = ttk.Checkbutton(self.experiment_frame, text=name, variable=var)
+            cb = ttk.Checkbutton(target_frame, text=name, variable=var)
             cb.pack(anchor='w', padx=5, pady=2)
     
     def update_metric_selection(self):
