@@ -374,10 +374,8 @@ class CMOEnv():
                 elif self.player_side:
                     obs = FeaturesFromSteam(cmo_steam_observation_file_to_xml(self.observation_path), self.player_side) 
                 return obs
-            except TypeError:
             except (TypeError, ExpatError):
                 get_obs_retries += 1
-                print("get_obs_retries: ",get_obs_retries)
                 # print("get_obs_retries: ",get_obs_retries)
                 sleep(0.0001)
                 if get_obs_retries > max_get_obs_retries:
