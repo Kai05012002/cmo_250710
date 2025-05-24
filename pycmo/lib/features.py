@@ -216,7 +216,7 @@ class Features(object):
             (list) a list of the units of the side.
         """
         unit_ids = []
-        if side_name == None or 'ActiveUnits' not in self.scen_dic["Scenario"].keys():
+        if side_name is None or 'ActiveUnits' not in self.scen_dic["Scenario"] or self.scen_dic["Scenario"]["ActiveUnits"] is None:
             return unit_ids
         for unit_type in self.scen_dic["Scenario"]["ActiveUnits"].keys():
             if unit_type != "Ship":
