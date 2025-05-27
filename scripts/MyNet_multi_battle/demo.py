@@ -92,10 +92,10 @@ def main():
     )
 
     # 初始化 Agent
-    agent = MyAgent(player_side=player_side, ac_name=ac_name, target_name=target_name)
+    agent = MyAgent(player_side=player_side, enemy_side='C')
 
     # 執行主循環
-    run_loop_steam_new(env=env, agent=agent, max_steps=1001)
+    run_loop_steam_new(env=env, agent=agent, max_steps=None)
 
 if __name__ == "__main__":
     main()
