@@ -716,7 +716,13 @@ class MyAgent(BaseAgent):
 
         # 原始獎勵
         raw_reward = reward
-        return raw_reward
+        # 獲勝獎勵200 + 敵軍總數 7 *擊殺獎勵 20 + 最大距離獎勵 200*7
+        max_return = self.win_reward + self.enemy_info.initial_enemy_count * 20 +  100
+        scaled_reward = raw_reward/(max_return/self.reward_scale)
+        # self.logger.info(f"raw reward: {raw_reward:.4f}, scaled reward: {scaled_reward:.4f}")
+        # 將標量 reward 擴展為多代理人向量
+        # return raw_reward
+        return scaled_reward
     
     def get_rewards(self,features: Multi_Side_FeaturesFromSteam, state: list[np.ndarray], next_state: list[np.ndarray], score: int) -> list[np.ndarray]:
         rewards = []
