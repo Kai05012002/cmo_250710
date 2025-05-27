@@ -316,6 +316,13 @@ class CMOEnv():
         
         except FileNotFoundError:
             raise FileNotFoundError("Cannot find scen_has_ended.txt.")
+
+    def send_action(self, action) -> None:
+        if action != None: 
+            try:
+                self.client.send(action)
+            except PermissionError:
+                self.logger.debug("SteamClient was not able to write the agent's action. Stepping forwards with no new action.")
     
     def step(self, action=None) -> TimeStep:
         
