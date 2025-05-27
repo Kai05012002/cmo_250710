@@ -15,7 +15,7 @@ from copy import deepcopy
 import logging
 
 # 导入FeUdal模型
-from scripts.DQN_episode.DQN_agent import RNN_Agent
+from module.agent.DRQN_agent import RNN_Agent
 
 
 class ReplayBuffer:

@@ -14,11 +14,11 @@ from copy import deepcopy
 
 import logging
 
-# 导入FeUdal模型
-from scripts.MyNet_multi_battle.GB_agent import my_Agent
-from scripts.MyNet_multi_battle.FeUdal_agent import Feudal_ManagerAgent, Feudal_WorkerAgent, FeUdalCritic
-from scripts.MyNet_multi_battle.DRQN_agent import RNN_Agent
-from scripts.MyNet_multi_battle.DQN_agent import DQN_Agent
+# 导入模型
+from module.batch_agent.GBV15_agent import my_Agent
+from module.batch_agent.FeUdal_agent import Feudal_ManagerAgent, Feudal_WorkerAgent, FeUdalCritic
+from module.batch_agent.DRQN_agent import RNN_Agent
+from module.batch_agent.DQN_agent import DQN_Agent
 
 # torch.backends.cudnn.benchmark = False
 # torch.backends.cudnn.deterministic = True

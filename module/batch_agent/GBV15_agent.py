@@ -24,7 +24,13 @@ class my_Agent(nn.Module):
         # 定義輸出層
         self.worker_fc2 = nn.Linear(args.hidden_dim, args.n_actions)
 
+        self.manager_rnn.flatten_parameters()
+        self.worker_rnn.flatten_parameters()
+
     def forward(self, input, hidden):
+        # Flatten RNN parameters for optimized cudnn usage
+        self.manager_rnn.flatten_parameters()
+        self.worker_rnn.flatten_parameters()
         # input: [T, B, A, feat]
         T, B, A, feat = input.shape
 
@@ -36,9 +42,10 @@ class my_Agent(nn.Module):
         m1 = F.relu(self.manager_fc1(x))              # [T, B*A, hidden]
         m_out, mh = self.manager_rnn(m1, hidden[0])   # m_out: [T, B*A, hidden]
         goal = self.manager_fc2(m_out)                # [T, B*A, goal_dim]
+        softmax_goal = F.softmax(goal, dim=2)
 
         # worker: concat feat + goal
-        y = torch.cat([x, goal], dim=2)               # [T, B*A, feat+goal_dim]
+        y = torch.cat([x, softmax_goal], dim=2)               # [T, B*A, feat+goal_dim]
         w1 = F.relu(self.worker_fc1(y))               # [T, B*A, hidden]
         w_out, wh = self.worker_rnn(w1, hidden[1])    # w_out: [T, B*A, hidden]
         action_flat = self.worker_fc2(w_out)          # [T, B*A, n_actions]
