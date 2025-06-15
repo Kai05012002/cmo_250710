@@ -8,6 +8,9 @@ from collections import deque
 import time
 import random
 import pprint
+import os
+from datetime import datetime
+import shutil
 
 import torch
 import torch.nn as nn
@@ -18,9 +21,11 @@ import logging
 
 # 导入模型
 from module.batch_agent.GBV15_agent import my_Agent
+from module.batch_agent.GBV2_agent import GB_Belief_Agent, GB_Worker_Agent, GB_Belief_Critic
 from module.batch_agent.FeUdal_agent import Feudal_ManagerAgent, Feudal_WorkerAgent, FeUdalCritic
 from module.batch_agent.DRQN_agent import RNN_Agent
 from module.batch_agent.DQN_agent import DQN_Agent
+from module.mixer.qmix import QMixer
 
 class ReplayBuffer:
     """
@@ -93,13 +98,12 @@ class MyAgent(BaseAgent):
         def alive_mask(self):
             return [self.alive.get(n, 0) for n in self.order]
 
-    def __init__(self, player_side: str, enemy_side: str = None):
+    def __init__(self, player_side: str, enemy_side: str = None,checkpoint_dir: str = None):
         """
         初始化 Agent。
         :param player_side: 玩家所屬陣營
-        :param ac_name: 控制的單位名稱（例如 B 船）
-        :param target_name: 目標單位名稱（例如 A 船），可選
-        :param log_level: 日誌級別，預設為INFO，可設置為logging.DEBUG啟用詳細日誌
+        :param enemy_side: 敵人所屬陣營
+        :param checkpoint_dir: 檢查點資料夾路徑
         """
         super().__init__(player_side)
         self.player_side = player_side
@@ -111,8 +115,38 @@ class MyAgent(BaseAgent):
         
         # 初始化 Mylib 並傳入 self
         self.mylib = Mylib(self)
+
+        self.agent_type = 'GBV15'  # 'GBV15', 'GBV2', 'Feudal', 'DRQN', 'DQN'
+        self.enable_mixer = False
+        self.enable_double_q = True
+        self.enable_on_policy = True
+        # 自動生成運行時間及 checkpoint 資料夾
+        self.run_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.checkpoint_dir = os.path.join('checkpoints', self.agent_type, self.run_time)
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        # FeUdal网络参数
+        # 建立state_action_logs資料夾
+        self.logs_dir = os.path.join(self.checkpoint_dir, 'state_action_logs')
+        os.makedirs(self.logs_dir, exist_ok=True)
+        
+        # 初始化記錄文件相關變量
+        self.current_log_file = None
+        self.log_file_handle = None
+        
+        # 複製 sample_agent.py 到 checkpoint 資料夾
+        src = os.path.abspath(__file__)
+        dst = os.path.join(self.checkpoint_dir, os.path.basename(__file__))
+        shutil.copy2(src, dst)
+        # 複製 demo.py 到 checkpoint 資料夾
+        src = os.path.abspath(os.path.join(os.path.dirname(__file__), 'demo.py'))
+        dst = os.path.join(self.checkpoint_dir, os.path.basename('demo.py'))
+        shutil.copy2(src, dst)
+        # 複製 config.yaml 到 checkpoint 資料夾
+        src = os.path.abspath(os.path.join(os.path.dirname(__file__), 'config.yaml'))
+        dst = os.path.join(self.checkpoint_dir, os.path.basename('config.yaml'))
+        shutil.copy2(src, dst)
+
+        # 網路參數
         class Args:
             def __init__(self):
                 self.hidden_dim = 64
@@ -120,7 +154,8 @@ class MyAgent(BaseAgent):
                 self.enemy_num = 3
                 self.input_size = 7 + 5 * (self.n_agents-1) + 4 * self.enemy_num  # [相對X, 相對Y, 敵人是否存在, 敵人存活比率, 敵人位置, 彈藥比率]
                 self.n_actions = 4  # 前進、左轉、右轉、攻擊
-                self.goal_dim = 4
+                self.goal_dim = 4   # 修改：讓 Manager 生成更豐富的策略目標
+                # Goal 可以表示：[探索方向_x, 探索方向_y, 攻擊傾向, 防守傾向, 速度偏好, 協調偏好, 風險偏好, 目標優先級]
                 
 
                 self.manager_hidden_dim = 64
@@ -146,9 +181,10 @@ class MyAgent(BaseAgent):
         self.gamma = 0.99
         self.lr = 5e-4
         self.batch_size = 32   # B
-        self.sequence_len = 16    # T
+        self.sequence_len = 64    # T
         # self.train_interval = 50        # 每隔多少 steps 學習一次
         self.update_freq = 10000        # 每隔多少 steps 同步 target network
+        self.save_freq = 50000        # 每隔多少 steps 保存 checkpoint
         self.eps_start = 1.0
         self.eps_end = 0.1
         self.eps_decay_steps = 100000
@@ -161,24 +197,61 @@ class MyAgent(BaseAgent):
         self.loss_threshold = 1.0  # 當 loss 超過此閾值時輸出訓練資料
         self.loss_log_file = 'large_loss_episodes.txt'  # 記錄異常 loss 的 episode 到文字檔
 
-        # ===============================MYNET========================================
-        # 建立 policy_net 與 target_net
-        self.my_agent = my_Agent(self.input_size, self.args).to(self.device)
-        self.target_my_agent = deepcopy(self.my_agent)
-        self.target_my_agent.eval() # 設置為評估模式
-        self.my_agent_optimizer = torch.optim.Adam(self.my_agent.parameters(), lr=self.lr)
-        # self.manager_agent = Feudal_ManagerAgent(self.input_size, self.args).to(self.device)
-        # self.worker_agent = Feudal_WorkerAgent(self.input_size, self.args).to(self.device)
-        # self.critic = FeUdalCritic(self.input_size, self.args).to(self.device)
+        # ===============================初始化網路========================================
+        if self.agent_type == 'GBV15':
+            # 建立 policy_net 與 target_net
+            self.my_agent = my_Agent(self.input_size, self.args).to(self.device)
+            self.target_my_agent = deepcopy(self.my_agent)
+            self.target_my_agent.eval() # 設置為評估模式
+            self.params = list(self.my_agent.parameters())
+            self.optimizer = torch.optim.Adam(self.params, lr=self.lr)
+            
+            # 用於記錄上一時刻的特徵以計算全域狀態
+            self.last_features = None
+        elif self.agent_type == 'GBV2':
+            self.manager_agent = GB_Belief_Agent(self.input_size, self.args).to(self.device)
+            self.worker_agent = GB_Worker_Agent(self.input_size, self.args).to(self.device)
+            self.target_worker_agent = deepcopy(self.worker_agent)
+            self.target_worker_agent.eval() # 設置為評估模式
+            self.manager_critic = GB_Belief_Critic(self.input_size, self.args).to(self.device)
+            # 新增: 為 GBV2 創建 manager 和 worker 優化器
+            self.manager_optimizer = torch.optim.Adam(
+                list(self.manager_agent.parameters()) + list(self.manager_critic.parameters()),
+                lr=self.lr
+            )
+            self.worker_optimizer = torch.optim.Adam(
+                list(self.worker_agent.parameters()),
+                lr=self.lr
+            )
+        elif self.agent_type == 'Feudal':
+            self.manager_agent = Feudal_ManagerAgent(self.input_size, self.args).to(self.device)
+            self.worker_agent = Feudal_WorkerAgent(self.input_size, self.args).to(self.device)
+            self.critic = FeUdalCritic(self.input_size, self.args).to(self.device)
+        elif self.agent_type == 'DRQN':
+            self.rnn_agent = RNN_Agent(self.input_size, self.args).to(self.device)
+        elif self.agent_type == 'DQN':
+            self.dqn_agent = DQN_Agent(self.input_size, self.args).to(self.device)
 
-        # self.rnn_agent = RNN_Agent(self.input_size, self.args).to(self.device)
-        # self.dqn_agent = DQN_Agent(self.input_size, self.args).to(self.device)
 
-        # 初始化隐藏状态
-        self.manager_hidden, self.worker_hidden = self.my_agent.init_hidden()
-        # self.manager_hidden = self.manager_agent.init_hidden()
-        # self.worker_hidden = self.worker_agent.init_hidden()
-        # self.rnn_agent_hidden = self.rnn_agent.init_hidden()
+        # 初始化 QMIX 混合網路
+        if self.enable_mixer:
+            global_state_dim = self.args.n_agents * 5 + self.args.enemy_num * 4
+            self.mixer = QMixer(self.args.n_agents, global_state_dim, self.args.hidden_dim).to(self.device)
+            self.target_mixer = deepcopy(self.mixer)
+            self.target_mixer.eval()
+            self.params += list(self.mixer.parameters())
+        
+        
+
+        # 初始化隱藏狀態
+        if self.agent_type == 'GBV15':
+            self.manager_hidden, self.worker_hidden = self.my_agent.init_hidden()
+        elif self.agent_type == 'GBV2':
+            self.manager_hidden, self.worker_hidden = self.manager_agent.init_hidden(), self.worker_agent.init_hidden()
+        elif self.agent_type == 'Feudal':
+            self.manager_hidden, self.worker_hidden = self.manager_agent.init_hidden(), self.worker_agent.init_hidden()
+        elif self.agent_type == 'DRQN':
+            self.rnn_agent_hidden = self.rnn_agent.init_hidden()
 
         self.best_distance = 1000000
         self.worst_distance = 0
@@ -219,6 +292,49 @@ class MyAgent(BaseAgent):
         self.enemy_info = MyAgent.EnemyInfo(self.player_side, self.enemy_side)
         self.friendly_info = MyAgent.FriendlyInfo(self.player_side)
 
+        if checkpoint_dir:
+            self._load_checkpoint(checkpoint_dir)
+
+    def _load_checkpoint(self, path: str):
+        """內部使用：從 path 載入模型、optimizer、epsilon、steps"""
+        ckpt = torch.load(path, map_location=self.device)
+        self.my_agent.load_state_dict(ckpt['model'])
+        self.target_my_agent.load_state_dict(ckpt['target_model'])
+        self.optimizer.load_state_dict(ckpt['optimizer'])
+        # 有存就還原，沒有就保留原本初始化的值
+        self.epsilon = ckpt.get('epsilon', self.epsilon)
+        self.total_steps   = ckpt.get('total_steps',   self.total_steps)
+        self.episode_count = ckpt.get('episode_count', self.episode_count)
+        self.logger.info(f"載入 checkpoint：{path}，從 step={self.total_steps} 繼續")
+        
+    def _save_checkpoint(self, path: str):
+        # 儲存模型
+        if self.total_steps % self.save_freq == 0:
+            ckpt = {    
+                'agent_type': self.agent_type,
+                'epsilon':      self.epsilon,
+                'total_steps':  self.total_steps,
+                'episode_count':self.episode_count                
+            }
+            if self.agent_type == 'GBV2':
+                ckpt['manager_agent'] = self.manager_agent.state_dict()
+                ckpt['manager_critic'] = self.manager_critic.state_dict()
+                ckpt['worker_agent'] = self.worker_agent.state_dict()
+                ckpt['target_worker_agent'] = self.target_worker_agent.state_dict()
+                ckpt['manager_optimizer'] = self.manager_optimizer.state_dict()
+                ckpt['worker_optimizer'] = self.worker_optimizer.state_dict()
+            if self.agent_type == 'GBV15':
+                ckpt['model'] = self.my_agent.state_dict()
+                ckpt['target_model'] = self.target_my_agent.state_dict()
+                ckpt['optimizer'] = self.optimizer.state_dict()
+            if self.enable_mixer:
+                ckpt['mixer'] = self.mixer.state_dict()
+                ckpt['target_mixer'] = self.target_mixer.state_dict()
+            # 使用預先創建的 checkpoint 目錄
+            path = os.path.join(self.checkpoint_dir, f'ckpt_{self.total_steps}.th')
+            torch.save(ckpt, path)
+            self.logger.info(f"已儲存 checkpoint: {path}")
+
     def get_unit_info_from_observation(self, features: Multi_Side_FeaturesFromSteam, side: str, unit_name: str) -> Unit:
         """
         從觀察中獲取指定單位的資訊。
@@ -252,6 +368,16 @@ class MyAgent(BaseAgent):
             if state[i][0] > self.done_condition: 
                 done = False
         return done
+    
+    def get_win(self, state: list[np.ndarray]):
+        win = True
+        # 所有船抵達目標
+        for i, name in enumerate(self.friendly_info.order):
+            if state[i][0] >= self.done_condition:
+                win = False
+            elif state[i][0] == 0.0:
+                win = False
+        return win
 
     def get_distance(self, dx, dy):
         """计算智能体与目标之间的距离，支持NumPy数组和PyTorch张量"""
@@ -277,6 +403,8 @@ class MyAgent(BaseAgent):
             self.episode_count += 1
             self.logger.info(f"episode: {self.episode_count}")
             
+            # 創建新的日志文件用於記錄state和action
+            self._create_new_log_file()
 
         if features.sides_[self.player_side].TotalScore == 0:
             self.prev_score = 0
@@ -297,20 +425,19 @@ class MyAgent(BaseAgent):
         # 如果有前一步資料，進行訓練
         if self.prev_state is not None and self.prev_action is not None:
             self.done = self.get_done(current_state)
-            rewards = self.get_rewards(features, self.prev_state, current_state, features.sides_[self.player_side].TotalScore)
-            # distance = self.get_distance(current_state)
-            # reward = 1
-            distance = 1
-            
-            # done = False
+            score_change = features.sides_[self.player_side].TotalScore - self.prev_score
+            rewards = self.get_rewards(features, self.prev_state, current_state, score_change)
+            self.prev_score = features.sides_[self.player_side].TotalScore
             # 将 rewards 列表转换为 numpy 数组并计算平均值
             rewards_arr = np.array(rewards, dtype=np.float32)
             avg_reward = rewards_arr.mean() if rewards_arr.size > 0 else 0.0
             self.total_reward += avg_reward
             self.episode_reward += avg_reward
             
-            # 將經驗添加到當前episode的記憶中
-            self.episode_memory.append((self.prev_state, current_state, self.prev_action, rewards, self.done, self.alive))
+            # 計算並記錄全域狀態
+            prev_global_state = self.get_global_state(self.last_features, self.prev_state)
+            current_global_state = self.get_global_state(features, current_state)
+            self.episode_memory.append((self.prev_state, prev_global_state, current_state, current_global_state, self.prev_action, rewards, self.done, self.alive))
             
             # 檢查遊戲是否結束
             if self.done or self.episode_step > self.max_episode_steps:
@@ -326,11 +453,14 @@ class MyAgent(BaseAgent):
 
 
                                 # 在遊戲結束時進行訓練
-                loss = 0
-                for _ in range(self.batch_size):
-                    episode_loss = self.train()
-                    loss = loss + episode_loss
-                loss = loss / self.batch_size
+                # 根據 agent 類型決定訓練次數：GBV2 為 on-policy，只訓練一次，其它 off-policy 可用多次隨機抽樣
+                if self.agent_type == 'GBV2':
+                    loss = self.train()
+                else:
+                    loss = 0
+                    for _ in range(self.batch_size):
+                        loss += self.train()
+                    loss = loss / self.batch_size
                 # 重置遊戲狀態
 
                 self.episode_steps_history.append(self.episode_step)
@@ -363,21 +493,32 @@ class MyAgent(BaseAgent):
         state_tensor = state_tensor.unsqueeze(1)       # → [seq_len=1, batch=1, Agent, feat]
         t0_rl = time.perf_counter()
         with torch.no_grad():
-            q_values, (self.manager_hidden, self.worker_hidden) = \
-                self.my_agent(state_tensor, (self.manager_hidden, self.worker_hidden))
-            # Manager生成目标
-            # _, goal, self.manager_hidden = self.manager_agent(state_tensor, self.manager_hidden)
+            if self.agent_type == 'GBV15':
+                q_values, (self.manager_hidden, self.worker_hidden) = \
+                    self.my_agent(state_tensor, (self.manager_hidden, self.worker_hidden))
+            elif self.agent_type == 'GBV2':
+                goal, self.manager_hidden = \
+                    self.manager_agent(state_tensor, self.manager_hidden)
+                q_values, self.worker_hidden = self.worker_agent(
+                    state_tensor, 
+                    self.worker_hidden,
+                    goal
+                )
+            elif self.agent_type == 'Feudal':
+                _, goal, self.manager_hidden = self.manager_agent(state_tensor, self.manager_hidden)
             
-            # # Worker根据目标选择动作
-            # q_values, self.worker_hidden = self.worker_agent(
-            #     state_tensor, 
-            #     self.worker_hidden,
-            #     goal
-            # )
-            # critic_value = self.critic(state_tensor)
-            # with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
-                # q_values, self.rnn_agent_hidden = self.rnn_agent(state_tensor, self.rnn_agent_hidden)
-            # q_values = self.dqn_agent(state_tensor)
+                # Worker根据目标选择动作
+                q_values, self.worker_hidden = self.worker_agent(
+                    state_tensor, 
+                    self.worker_hidden,
+                    goal
+                )
+                critic_value = self.critic(state_tensor)
+            elif self.agent_type == 'DRQN':
+                q_values, self.rnn_agent_hidden = self.rnn_agent(state_tensor, self.rnn_agent_hidden)
+            elif self.agent_type == 'DQN':
+                q_values = self.dqn_agent(state_tensor)
+
         dt_rl = time.perf_counter() - t0_rl
         # self.step_times_rl.append(dt_rl)
         # if dt_rl > 0.01:
@@ -457,6 +598,9 @@ class MyAgent(BaseAgent):
             else:
                 action_cmd += "\n" + self.apply_action(actions[idx], unit, features)
 
+        # 記錄state和action到文件
+        self._log_state_action(current_state, actions, self.episode_step)
+
         if self.episode_step < 10:
             for unit in features.units[self.enemy_side]:
                 action_cmd += "\n" + set_unit_to_mission(
@@ -474,19 +618,25 @@ class MyAgent(BaseAgent):
         # print("alive:", self.alive)
 
         # 更新 epsilon
-        # 線性更新
         self.epsilon = self.eps_start - (self.eps_start - self.eps_end) * self.total_steps / self.eps_decay_steps
         self.epsilon = max(self.eps_end, self.epsilon)
         self.logger.debug(f"更新epsilon: {self.epsilon:.4f}")
 
+        # 更新目標網路
         if self.total_steps % self.update_freq == 0:
-
-
-            self.target_my_agent.load_state_dict(self.my_agent.state_dict())
+            if self.agent_type == 'GBV15':
+                self.target_my_agent.load_state_dict(self.my_agent.state_dict())
+            if self.enable_mixer:
+                self.target_mixer.load_state_dict(self.mixer.state_dict())
+            # 同步 GBV2 worker 目標網路
+            if self.agent_type == 'GBV2':
+                self.target_worker_agent.load_state_dict(self.worker_agent.state_dict())
         
         # 儲存模型
-        # if self.total_steps % 1000 == 0:
-        #     torch.save(self.my_agent.state_dict(), f'models/my_agent_{self.total_steps}.pth')
+        self._save_checkpoint(self.checkpoint_dir)
+        
+        # 保存當前features以供下一步計算全域狀態
+        self.last_features = features
         
         return action_cmd
 
@@ -684,18 +834,122 @@ class MyAgent(BaseAgent):
                 state = self.get_state(features, unit)
             states.append(state)
         return states
+    
+    def get_global_state(self, features: Multi_Side_FeaturesFromSteam, states: list[np.ndarray]) -> np.ndarray:
+        target_lon = float(118.27954108343)
+        target_lat = float(24.333113806906)
+        max_distance = self.max_distance
+        global_state = []
+        for name in self.friendly_info.order:
+            ac = self.get_unit_info_from_observation(features, self.player_side, name)
+            if ac is not None:
+                # 計算相對位置
+                ac_lon = float(ac.Lon)
+                ac_lat = float(ac.Lat)
+                # 計算相對座標 (X,Y)，將經緯度差轉換為大致的平面座標
+                # 注意：這是簡化的轉換，對於小範圍有效
+                # X正方向為東，Y正方向為北
+                earth_radius = 6371  # 地球半徑（公里）
+                lon_scale = np.cos(np.radians(ac_lat))  # 經度在當前緯度的縮放因子
+                
+                # 1. 計算目標相對 X 和 Y（公里）
+                dx = (target_lon - ac_lon) * np.pi * earth_radius * lon_scale / 180.0
+                dy = (target_lat - ac_lat) * np.pi * earth_radius / 180.0
+                dist = np.sqrt(dx**2 + dy**2)
+                dx_norm = dx / max_distance
+                dy_norm = dy / max_distance
+                dist_norm = dist / max_distance
+
+                # 計算目標方位角（0=東，逆時針為正）
+                target_angle = np.arctan2(dy, dx)
+
+                # CMO 的 CH: 0=北，順時針增
+                # 轉到 0=東，逆時針增：heading_math = 90°−CH
+                heading_rad = np.deg2rad(90.0 - ac.CH)
+
+                # 相對角度 = 目標方位 − 自身航向
+                relative_angle = target_angle - heading_rad
+
+                # 正規化到 [-π, π]
+                relative_angle = (relative_angle + np.pi) % (2*np.pi) - np.pi
+
+                # 如需用 sin/cos 表示
+                relative_sin = np.sin(relative_angle)
+                relative_cos = np.cos(relative_angle)
+
+                alive = 1.0
+
+                # 計算彈藥持有比率
+                mount_ratio = 0.0
+                mounts = getattr(ac, 'Mounts', None)
+                if mounts:
+                    for mount in mounts:
+                        name = getattr(mount, 'Name', None)
+                        weapons = getattr(mount, 'Weapons', [])
+                        if not weapons:
+                            continue
+                        curr = weapons[0].QuantRemaining
+                        maxq = weapons[0].MaxQuant
+                        ratio = curr / maxq if maxq > 0 else 0.0
+                        if name == 'Hsiung Feng II Quad':
+                            mount_ratio += ratio
+                        elif name == 'Hsiung Feng III Quad':
+                            mount_ratio += ratio
+                    mount_ratio /= 2
+            else:
+                alive = 0.0
+                dist_norm = 0.0
+                relative_sin = 0.0
+                relative_cos = 0.0
+                mount_ratio = 0.0
+            # 構建基礎狀態向量[距離, 方位sin, 方位cos, 敵人是否存在, 敵人存活比率,彈藥比率,步數比率]
+            base_state = np.array([
+                                    alive, #0
+                                    dist_norm, #1
+                                    relative_sin, #2
+                                    relative_cos, #3
+                                    mount_ratio, #4
+                                    ], dtype=np.float32)
+            global_state = np.concatenate([global_state, base_state])
+
+        for name in self.enemy_info.order:
+            enemy_unit = self.get_unit_info_from_observation(features, self.enemy_side, name)
+            if enemy_unit is not None:
+                enemy_alive = 1.0
+                enemy_dx = (float(enemy_unit.Lon) - target_lon) * np.pi * earth_radius * lon_scale / 180.0
+                enemy_dy = (float(enemy_unit.Lat) - target_lat) * np.pi * earth_radius / 180.0
+                enemy_dx_norm = enemy_dx / max_distance
+                enemy_dy_norm = enemy_dy / max_distance
+                enemy_dist_norm = np.sqrt(enemy_dx_norm**2 + enemy_dy_norm**2)
+                # 計算方位角
+                enemy_angle = np.arctan2(enemy_dy, enemy_dx)
+                enemy_relative_angle = enemy_angle - heading_rad
+                enemy_relative_angle = (enemy_relative_angle + np.pi) % (2*np.pi) - np.pi
+                enemy_relative_sin = np.sin(enemy_relative_angle)
+                enemy_relative_cos = np.cos(enemy_relative_angle)
+            else:
+                enemy_alive = 0.0
+                enemy_dist_norm = 0.0
+                enemy_relative_sin = 0.0
+                enemy_relative_cos = 0.0
+            # 構建敵人狀態向量[存活, 距離, 方位sin, 方位cos]
+            enemy_state = np.array([
+                                    enemy_alive,
+                                    enemy_dist_norm,
+                                    enemy_relative_sin,
+                                    enemy_relative_cos
+                                ], dtype=np.float32)
+            global_state = np.concatenate([global_state, enemy_state])
+
+
+        return global_state
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
-    def get_reward(self, state: np.ndarray, next_state: np.ndarray, score: int) -> np.ndarray:
+    def get_reward(self, state: np.ndarray, next_state: np.ndarray, score: int, win: bool) -> np.ndarray:
         # 計算全局 reward
         reward = 0
         
-        # 場景score
-        current_score = score
-        # 場景score變化
-        score_change = current_score - self.prev_score
-        self.prev_score = current_score
         # 場景score變化獎勵
-        reward += score_change
+        reward += score
         # 發現敵人獎勵
         if state[3] == 0.0 and next_state[3] == 1.0:
             reward += 10
@@ -709,15 +963,18 @@ class MyAgent(BaseAgent):
         if state[0] >= self.done_condition and next_state[0] < self.done_condition:
             reward += 20
 
-        if next_state[0] < self.done_condition and self.done:
+        if win:
             win_reward = self.win_reward * (1- (self.episode_step - self.min_episode_steps) / (self.max_episode_steps - self.min_episode_steps))
-            win_reward = max(win_reward, self.min_win_reward)
+            win_reward = max(win_reward + self.min_win_reward, self.min_win_reward)
+            # if self.enable_mixer:
+            #     win_reward = win_reward / self.args.n_agents
+            
             reward += win_reward
 
         # 原始獎勵
         raw_reward = reward
         # 獲勝獎勵200 + 敵軍總數 7 *擊殺獎勵 20 + 最大距離獎勵 200*7
-        max_return = self.win_reward + self.enemy_info.initial_enemy_count * 20 +  100
+        max_return = self.win_reward + self.min_win_reward + self.enemy_info.initial_enemy_count * 20 +  100
         scaled_reward = raw_reward/(max_return/self.reward_scale)
         # self.logger.info(f"raw reward: {raw_reward:.4f}, scaled reward: {scaled_reward:.4f}")
         # 將標量 reward 擴展為多代理人向量
@@ -733,9 +990,10 @@ class MyAgent(BaseAgent):
                 # 單位死亡或不存在，給予0獎勵
                 reward = 0
             else:
-                reward = self.get_reward(state[i], next_state[i], score)
+                reward = self.get_reward(state[i], next_state[i], score, self.get_win(next_state))
             # 無論單位是否存活，都添加對應獎勵，確保長度一致
             rewards.append(reward)
+
         return rewards
 
     def apply_action(self, action: int, ac: Unit, features: Multi_Side_FeaturesFromSteam) -> str:
@@ -792,64 +1050,207 @@ class MyAgent(BaseAgent):
         if len(self.completed_episodes) < 1:
             self.logger.warning("沒有足夠的episodes進行訓練")
             return
-        # 隨機選一個已完成 episode
-        episode = random.choice(self.completed_episodes)
-        # 解包批次: (states, next_states, actions_list, reward, done, alive_mask)
-        states, next_states, actions_list, rewards, dones, alive_masks = zip(*episode)
+        if self.enable_on_policy:
+            # 使用最新的episode
+            episode = self.completed_episodes[-1]
+        else:
+            # 隨機選一個已完成 episode
+            episode = random.choice(self.completed_episodes)
+            # 解包批次: (states, prev_global_states, next_states, next_global_states, actions_list, rewards, dones, _)
+        states, prev_global_states, next_states, next_global_states, actions_list, rewards, dones, _ = zip(*episode)
         # 張量轉換: states [T,A,feat] -> [T,1,A,feat]
         states = torch.tensor(states, dtype=torch.float32, device=self.device).unsqueeze(1)
         next_states = torch.tensor(next_states, dtype=torch.float32, device=self.device).unsqueeze(1)
+        # 張量轉換 global_states [T,S] -> [T,1,S]
+        global_states = torch.tensor(prev_global_states, dtype=torch.float32, device=self.device).unsqueeze(1)
+        next_global_states = torch.tensor(next_global_states, dtype=torch.float32, device=self.device).unsqueeze(1)
         # actions_list [T,A] -> [T,1,A]
         actions_tensor = torch.tensor(actions_list, dtype=torch.long, device=self.device).unsqueeze(1)
         # rewards [T,A] -> [T,1,A]
         rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=self.device).unsqueeze(1)
         # dones [T] -> [T,1,1]
         dones_tensor = torch.tensor(dones, dtype=torch.float32, device=self.device).view(-1,1,1)
-        # alive_masks [T,A] -> [T,1,A]
-        alive_masks = torch.tensor(alive_masks, dtype=torch.float32, device=self.device).unsqueeze(1)
 
         #----------------------------- Calculate loss -----------------------------------
-        # Forward
-        mh0, wh0 = self.my_agent.init_hidden()
-        q_values, _ = self.my_agent(states, (mh0, wh0))  
+        if self.agent_type == 'GBV15':
+            loss = self.GBV15_train(states, next_states, actions_tensor, rewards_tensor, dones_tensor, global_states, next_global_states)
+            return loss
+        elif self.agent_type == 'GBV2':
+            loss = self.GBV2_train(states, next_states, actions_tensor, rewards_tensor, dones_tensor, global_states, next_global_states)
+            return loss
+        # big loss check
+        # self.big_loss_check(loss)
+
         
-        # [T,1,A,n_actions]
+
+    def train_batch_test(self):
+        valid_eps = [ep for ep in self.completed_episodes if len(ep) >= self.sequence_len]
+        if len(valid_eps) < self.batch_size:
+            return 0.0
+
+        batch_eps = random.sample(valid_eps, self.batch_size)
+
+        batch_seqs = []
+        for ep in batch_eps:
+            L = len(ep)
+            # 確保至少有 T 長度
+            assert L >= self.sequence_len
+
+            r = random.random()
+            if r < 0.05:
+                start = 0
+            elif r < 0.1:
+                start = L - self.sequence_len
+            else:
+                start = random.randint(0, L - self.sequence_len)
+
+            batch_seqs.append(ep[start : start + self.sequence_len])
+
+        # 解包成 numpy array，形狀 [T, B, ...]
+        states      = np.stack([[step[0] for step in seq] for seq in batch_seqs], axis=1)
+        next_states = np.stack([[step[1] for step in seq] for seq in batch_seqs], axis=1)
+        actions     = np.stack([[step[2] for step in seq] for seq in batch_seqs], axis=1)
+        rewards     = np.stack([[step[3] for step in seq] for seq in batch_seqs], axis=1)
+        dones       = np.stack([[step[4] for step in seq] for seq in batch_seqs], axis=1)
+
+        # 轉成 tensor
+        states      = torch.tensor(states,      dtype=torch.float32, device=self.device)
+        next_states = torch.tensor(next_states, dtype=torch.float32, device=self.device)
+        actions     = torch.tensor(actions,     dtype=torch.long,    device=self.device)
+        rewards     = torch.tensor(rewards,     dtype=torch.float32, device=self.device)
+        dones       = torch.tensor(dones,       dtype=torch.float32, device=self.device).unsqueeze(-1)  # 增加一個維度以匹配 [T, B, A]
+
+        # 初始化 hidden，這裡將 batch_size 傳給 init_hidden
+        if self.agent_type == 'GBV15':
+            mh0, wh0 = self.my_agent.init_hidden(batch_size=self.batch_size)
+        elif self.agent_type == 'Feudal':
+            mh0, wh0 = self.manager_agent.init_hidden(batch_size=self.batch_size), self.worker_agent.init_hidden(batch_size=self.batch_size)
+        elif self.agent_type == 'DRQN':
+            h0 = self.rnn_agent.init_hidden(batch_size=self.batch_size)
+
+        # 正向計算
+        q_values, _       = self.my_agent(states,      (mh0, wh0))  # [T, B, A, n_actions]
         with torch.no_grad():
-            target_q_values, _ = self.target_my_agent(next_states, (mh0, wh0))  # [T,1,A,n_actions]
-        # Gather current Q for taken actions
-        current_q = q_values.gather(3, actions_tensor.unsqueeze(-1)).squeeze(-1)  # [T,1,A]
-        # Max next Q
-        max_next_q = target_q_values.max(dim=3)[0]  # [T,1,A]
-        # TD target
-        target_q = rewards_tensor + (1 - dones_tensor) * self.gamma * max_next_q
+            q_next, _    = self.target_my_agent(next_states, (mh0, wh0))
 
-        current_q = current_q * alive_masks
-        target_q = target_q * alive_masks
+        # 計算 TD 目標
+        q_taken    = q_values.gather(3, actions.unsqueeze(-1)).squeeze(-1)
+        max_next_q = q_next.max(dim=3)[0]
 
-        mse = (current_q - target_q).pow(2)
-        loss = mse.sum() / alive_masks.sum().clamp(min=1.0)
+        # 更新 TD 目標與損失計算
+        td_target = rewards + (1 - dones) * self.gamma * max_next_q  # [T, B, A]
+        mse = (q_taken - td_target).pow(2)
+        loss = mse.mean()
 
         # 檢查極端 loss，並列印 episode 訓練資料
         loss_value = loss.item()
         if loss_value > self.loss_threshold:
             self.logger.warning(f"Large loss: {loss_value:.4f} > threshold {self.loss_threshold}")
-            pprint.pprint(episode)
+            pprint.pprint(batch_eps)
             # 將異常 episode 寫入文字檔
             with open(self.loss_log_file, 'a', encoding='utf-8') as f:
                 f.write(f"=== Large loss: {loss_value:.4f} ===\n")
-                f.write(pprint.pformat(episode) + "\n\n")
+                f.write(pprint.pformat(batch_eps) + "\n\n")
         self.my_agent_optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.my_agent.parameters(), max_norm=5)
         self.my_agent_optimizer.step()
 
         return loss.item()
+    
+    def train_all_batch(self):
+        # 使用整個 episode 並對齊 batch
+        valid_eps = self.completed_episodes
+        if len(valid_eps) < self.batch_size:
+            return 0.0
 
+        batch_eps = random.sample(valid_eps, self.batch_size)
+        # 計算最大 episode 長度
+        seq_lengths = [len(ep) for ep in batch_eps]
+        max_len = max(seq_lengths)
+        # 將每個 episode pad 到相同長度，並將 state 轉為 numpy array
+        padded_batch_seqs = []
+        for ep in batch_eps:
+            padded_ep = []
+            L = len(ep)
+            # 獲取 agent 數量和特徵維度
+            first_state_list = ep[0][0]  # list[np.ndarray]
+            A = len(first_state_list)
+            feat = first_state_list[0].shape[0]
+            state_shape = (A, feat)
+            for t in range(max_len):
+                if t < L:
+                    step = ep[t]
+                    # 將列表形式的 state/next_state 轉為 numpy array
+                    state_arr = np.stack(step[0], axis=0)
+                    next_state_arr = np.stack(step[1], axis=0)
+                    action_list = step[2]
+                    reward_arr = np.array(step[3], dtype=np.float32)
+                    done_val = step[4]
+                    padded_ep.append((state_arr, next_state_arr, action_list, reward_arr, done_val))
+                else:
+                    # pad 步驟
+                    padded_state = np.zeros(state_shape, dtype=np.float32)
+                    padded_next_state = np.zeros(state_shape, dtype=np.float32)
+                    padded_action = [0] * A
+                    padded_reward = np.zeros(A, dtype=np.float32)
+                    padded_done = 1.0
+                    padded_ep.append((padded_state, padded_next_state, padded_action, padded_reward, padded_done))
+            padded_batch_seqs.append(padded_ep)
+        batch_seqs = padded_batch_seqs
+
+        # 解包成 numpy array，形狀 [T, B, ...]
+        states      = np.stack([[step[0] for step in seq] for seq in batch_seqs], axis=1)
+        next_states = np.stack([[step[1] for step in seq] for seq in batch_seqs], axis=1)
+        actions     = np.stack([[step[2] for step in seq] for seq in batch_seqs], axis=1)
+        rewards     = np.stack([[step[3] for step in seq] for seq in batch_seqs], axis=1)
+        dones       = np.stack([[step[4] for step in seq] for seq in batch_seqs], axis=1)
+
+        # 轉成 tensor
+        states      = torch.tensor(states,      dtype=torch.float32, device=self.device)
+        next_states = torch.tensor(next_states, dtype=torch.float32, device=self.device)
+        actions     = torch.tensor(actions,     dtype=torch.long,    device=self.device)
+        rewards     = torch.tensor(rewards,     dtype=torch.float32, device=self.device)
+        dones       = torch.tensor(dones,       dtype=torch.float32, device=self.device).unsqueeze(-1)  # 增加一個維度以匹配 [T, B, A]
+
+        # 初始化 hidden，這裡將 batch_size 傳給 init_hidden
+        mh0, wh0 = self.my_agent.init_hidden(batch_size=self.batch_size)
+
+        # 正向計算
+        q_values, _       = self.my_agent(states,      (mh0, wh0))  # [T, B, A, n_actions]
+        with torch.no_grad():
+            q_next, _    = self.target_my_agent(next_states, (mh0, wh0))
+
+        # 計算 TD 目標
+        q_taken    = q_values.gather(3, actions.unsqueeze(-1)).squeeze(-1)
+        max_next_q = q_next.max(dim=3)[0]
+
+        # 更新 TD 目標與損失計算
+        td_target = rewards + (1 - dones) * self.gamma * max_next_q  # [T, B, A]
+        mse = (q_taken - td_target).pow(2)
+        loss = mse.mean()
+
+        # # 檢查極端 loss，並列印 episode 訓練資料
+        # loss_value = loss.item()
+        # if loss_value > self.loss_threshold:
+        #     self.logger.warning(f"Large loss: {loss_value:.4f} > threshold {self.loss_threshold}")
+        #     pprint.pprint(batch_eps)
+        #     # 將異常 episode 寫入文字檔
+        #     with open(self.loss_log_file, 'a', encoding='utf-8') as f:
+        #         f.write(f"=== Large loss: {loss_value:.4f} ===\n")
+        #         f.write(pprint.pformat(batch_eps) + "\n\n")
+        self.my_agent_optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.my_agent.parameters(), max_norm=5)
+        self.my_agent_optimizer.step()
 
         return loss.item()
     
     def reset(self):
         """重置遊戲狀態，準備開始新的episode"""
+        # 關閉當前日志文件
+        self._close_log_file()
+        
         self.episode_init = True
         self.best_distance = 1000000
         self.worst_distance = 0
@@ -858,10 +1259,18 @@ class MyAgent(BaseAgent):
         self.episode_step = 0
         self.episode_done = False
         self.episode_reward = 0
-        self.manager_hidden, self.worker_hidden = self.my_agent.init_hidden()
-        # 清空當前episode的記憶
         self.episode_memory = []
         self.done = False
+        if self.agent_type == 'GBV15':
+            self.manager_hidden, self.worker_hidden = self.my_agent.init_hidden()
+        elif self.agent_type == 'GBV2':
+            self.manager_hidden, self.worker_hidden = self.manager_agent.init_hidden(), self.worker_agent.init_hidden()
+        elif self.agent_type == 'Feudal':
+            self.manager_hidden, self.worker_hidden = self.manager_agent.init_hidden(), self.worker_agent.init_hidden()
+        elif self.agent_type == 'DRQN':
+            self.rnn_agent_hidden = self.rnn_agent.init_hidden()
+        # 清空當前episode的記憶
+        
         self.logger.info("重置遊戲狀態，準備開始新的episode")
 
         # 組合多個命令
@@ -899,3 +1308,255 @@ class MyAgent(BaseAgent):
                 Lon=ac.Lon
             ) + "\n"
         self.reset_cmd = action_cmd
+
+    def big_loss_check(self, loss: float):
+        # # 檢查極端 loss，並列印 episode 訓練資料
+        # loss_value = loss.item()
+        # if loss_value > self.loss_threshold:
+        #     self.logger.warning(f"Large loss: {loss_value:.4f} > threshold {self.loss_threshold}")
+        #     pprint.pprint(episode)
+        #     # 將異常 episode 寫入文字檔
+        #     with open(self.loss_log_file, 'a', encoding='utf-8') as f:
+        #         f.write(f"=== Large loss: {loss_value:.4f} ===\n")
+        #         f.write(pprint.pformat(episode) + "\n\n")
+        # Optimize agent networks and mixer
+        return
+    
+    def GBV15_train(self, states: torch.Tensor,
+                            next_states: torch.Tensor,
+                            actions_tensor: torch.Tensor,
+                            rewards_tensor: torch.Tensor,
+                            dones_tensor: torch.Tensor,
+                            global_states: torch.Tensor, 
+                            next_global_states: torch.Tensor):
+        """訓練 GBV15 網路"""
+        # Forward
+        mh0, wh0 = self.my_agent.init_hidden()
+        q_values, _ = self.my_agent(states, (mh0, wh0))  
+        
+        # [T,1,A,n_actions]
+        with torch.no_grad():
+            target_q_values, _ = self.target_my_agent(next_states, (mh0, wh0))  # [T,1,A,n_actions]
+        # Gather current Q for taken actions
+        current_q = q_values.gather(3, actions_tensor.unsqueeze(-1)).squeeze(-1)  # [T,1,A]
+        
+        # double Q
+        if self.enable_double_q:
+            with torch.no_grad():
+                online_next_q, _ = self.my_agent(next_states, (mh0, wh0))
+            best_actions = online_next_q.argmax(dim=3, keepdim=True)       # [T,1,A,1]
+            max_next_q   = target_q_values.gather(3, best_actions).squeeze(-1)  # [T,1,A]
+        else:
+            max_next_q = target_q_values.max(dim=3)[0]  # [T,1,A]
+
+        # mixer
+        if self.enable_mixer:
+            current_q = self.mixer(current_q, global_states)
+            max_next_q = self.target_mixer(max_next_q, next_global_states)
+            # 平均rewards
+            rewards_tensor = rewards_tensor.mean(dim=2, keepdim=True)
+        # else:
+        #    # 一律使用平均的joint_reward
+        #     rewards_tensor = rewards_tensor.mean(dim=2, keepdim=True)
+        #     # 將 rewards_tensor 擴展為 [T,1,A]
+        #     rewards_tensor = rewards_tensor.repeat(1, 1, self.args.n_agents)
+
+        # TD target
+        target_q = rewards_tensor + (1 - dones_tensor) * self.gamma * max_next_q
+
+        mse = (current_q - target_q).pow(2)
+        loss = mse.mean()
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.params, max_norm=5)
+        self.optimizer.step()
+
+        return loss.item()
+
+    def GBV2_train(self, states: torch.Tensor,
+                            next_states: torch.Tensor,
+                            actions_tensor: torch.Tensor,
+                            rewards_tensor: torch.Tensor,
+                            dones_tensor: torch.Tensor,
+                            global_states: torch.Tensor, 
+                            next_global_states: torch.Tensor):
+        """訓練 GBV2 網路"""
+
+        # manager
+        # Critic 返回 [T,B,A,1]，squeeze 最後一維到 [T,B,A]
+        values_M = self.manager_critic(states).squeeze(-1)
+        values_M_next = self.manager_critic(next_states).squeeze(-1)
+
+        # GAE
+        # rewards_tensor [T,B,A], dones_tensor [T,B,1], values_M_next [T,B,A]
+        
+        # 修復：為 Manager 設計專用獎勵，關注長期戰略目標
+        # Manager 關心：整體進度、生存率、協調性
+        # 使用滑動平均來平滑短期波動，關注長期趨勢
+        window_size = min(5, rewards_tensor.size(0))
+        if rewards_tensor.size(0) >= window_size:
+            # 計算滑動平均獎勵，讓 Manager 關注長期趨勢
+            manager_rewards = torch.zeros_like(rewards_tensor)
+            for t in range(rewards_tensor.size(0)):
+                start_idx = max(0, t - window_size + 1)
+                manager_rewards[t] = rewards_tensor[start_idx:t+1].mean(dim=0, keepdim=True)
+        else:
+            manager_rewards = rewards_tensor
+            
+        deltas_M = manager_rewards + (1 - dones_tensor) * self.gamma * values_M_next - values_M
+        advantage_M = torch.zeros_like(rewards_tensor, device=self.device)
+        last_adv_M = 0.0
+        for t in reversed(range(len(rewards_tensor))):
+            last_adv_M = deltas_M[t] + self.gamma * 0.95 * (1 - dones_tensor[t]) * last_adv_M
+            advantage_M[t] = last_adv_M
+        
+        # 正規化
+        advantage_M = (advantage_M - advantage_M.mean()) / (advantage_M.std() + 1e-8)
+
+        # Manager 策略梯度與 Critic 更新
+        mh0 = self.manager_agent.init_hidden(batch_size=1)
+        b_values, _ = self.manager_agent(states, mh0)  # [T, B*A, goal_dim]
+        # 重新形狀到 [T, B, A, goal_dim]
+        T, B, A, _ = states.shape
+        goal_dim = b_values.size(-1)
+        b_values = b_values.view(T, B, A, goal_dim)
+        # 計算選中目標的 log-prob
+        # 修復：使用與執行時一致的確定性策略
+        # 執行時我們直接使用 softmax 輸出，所以這裡應該用連續的 goal
+        
+        # 方法1：直接使用 softmax 輸出作為連續 goal，不進行離散化
+        # 這樣就避免了策略梯度的離散化問題
+        continuous_goal = b_values  # [T, B, A, goal_dim]
+        
+        # 策略損失：鼓勵 goal 朝著高 advantage 方向發展
+        # 使用 advantage 作為權重，直接優化 goal 分佈
+        policy_loss = -(advantage_M.detach() * continuous_goal.mean(dim=-1)).mean()
+        
+        # 或者方法2：如果一定要用離散策略，至少要與執行一致
+        # 使用最大概率的動作（類似 greedy 執行）
+        # goal_actions = b_values.argmax(dim=-1)  # [T, B, A]
+        # dist = torch.distributions.Categorical(b_values.view(-1, goal_dim))
+        # m_log_probs = dist.log_prob(goal_actions.view(-1)).view(T, B, A)
+        # policy_loss = -(advantage_M.detach() * m_log_probs).mean()
+        # 價值損失: 返回與 values_M 同形狀 [T,B,A]
+        returns_M = advantage_M.detach() + values_M  # [T, B, A]
+        value_loss = F.mse_loss(values_M, returns_M)
+        loss_M = policy_loss + value_loss
+
+        # 更新 manager 參數
+        self.manager_optimizer.zero_grad()
+        loss_M.backward()
+        torch.nn.utils.clip_grad_norm_(self.manager_agent.parameters(), max_norm=5)
+        torch.nn.utils.clip_grad_norm_(self.manager_critic.parameters(), max_norm=5)
+        self.manager_optimizer.step()
+
+        # Worker Q-learning 更新
+        wh0 = self.worker_agent.init_hidden(batch_size=1)
+        q_values_w, _ = self.worker_agent(states, wh0, b_values.detach().view(T, B*A, goal_dim))
+
+        
+        with torch.no_grad():
+            b_next, _ = self.manager_agent(next_states, mh0)
+            q_next_w, _ = self.target_worker_agent(next_states, wh0, b_next)
+        q_taken = q_values_w.gather(3, actions_tensor.unsqueeze(-1)).squeeze(-1)  # [T, B, A]
+
+        # double Q
+        if self.enable_double_q:
+            with torch.no_grad():
+                online_next_q_w, _ = self.worker_agent(next_states, wh0, b_next)
+            best_actions = online_next_q_w.argmax(dim=3, keepdim=True)       # [T, B, A, 1]
+            max_next_q_w = q_next_w.gather(3, best_actions).squeeze(-1)  # [T, B, A]
+        else:
+            max_next_q_w = q_next_w.max(dim=3)[0]  # [T, B, A]
+
+        # TD target
+        target_q_w = rewards_tensor + (1 - dones_tensor) * self.gamma * max_next_q_w
+
+
+        loss_W = (q_taken - target_q_w.detach()).pow(2).mean()
+
+        # 更新 worker 參數
+        self.worker_optimizer.zero_grad()
+        loss_W.backward()
+        torch.nn.utils.clip_grad_norm_(self.worker_agent.parameters(), max_norm=5)
+        self.worker_optimizer.step()
+
+        # 返回總損失
+        return (loss_M + loss_W).item()
+
+    def _create_new_log_file(self):
+        """創建新的日志文件用於記錄state和action"""
+        # 關閉之前的文件（如果有的話）
+        self._close_log_file()
+        
+        # 生成文件名：包含episode編號和時間戳
+        timestamp = datetime.now().strftime("%H%M%S")
+        filename = f"episode_{self.episode_count:05d}_{timestamp}.txt"
+        self.current_log_file = os.path.join(self.logs_dir, filename)
+        
+        try:
+            self.log_file_handle = open(self.current_log_file, 'w', encoding='utf-8')
+            # 寫入文件頭信息
+            self.log_file_handle.write(f"=== Episode {self.episode_count} State-Action Log ===\n")
+            self.log_file_handle.write(f"Agent Type: {self.agent_type}\n")
+            self.log_file_handle.write(f"Player Side: {self.player_side}\n")
+            self.log_file_handle.write(f"Enemy Side: {self.enemy_side}\n")
+            self.log_file_handle.write(f"Start Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            self.log_file_handle.write("=" * 60 + "\n\n")
+            self.log_file_handle.flush()
+            self.logger.info(f"創建新的日志文件: {self.current_log_file}")
+        except Exception as e:
+            self.logger.error(f"創建日志文件時發生錯誤: {e}")
+            self.log_file_handle = None
+
+    def _log_state_action(self, states: list[np.ndarray], actions: list[int], step: int):
+        """記錄state和action到文件"""
+        if self.log_file_handle is None:
+            return
+            
+        try:
+            self.log_file_handle.write(f"Step {step}:\n")
+            self.log_file_handle.write("-" * 40 + "\n")
+            
+            # 記錄每個agent的state和action
+            for idx, (state, action) in enumerate(zip(states, actions)):
+                agent_name = self.friendly_info.order[idx] if idx < len(self.friendly_info.order) else f"Agent_{idx}"
+                self.log_file_handle.write(f"Agent {idx} ({agent_name}):\n")
+                
+                # 格式化state向量，每行最多8個數值
+                state_str = "  State: ["
+                for i, val in enumerate(state):
+                    if i > 0 and i % 8 == 0:
+                        state_str += "\n         "
+                    state_str += f"{val:8.4f}, "
+                state_str = state_str.rstrip(", ") + "]\n"
+                self.log_file_handle.write(state_str)
+                
+                # 記錄action
+                action_names = ["前進", "左轉", "右轉", "攻擊"]
+                action_name = action_names[action] if 0 <= action < len(action_names) else f"未知動作({action})"
+                self.log_file_handle.write(f"  Action: {action} ({action_name})\n")
+                self.log_file_handle.write("\n")
+            
+            self.log_file_handle.write("\n")
+            self.log_file_handle.flush()
+            
+        except Exception as e:
+            self.logger.error(f"記錄state-action時發生錯誤: {e}")
+
+    def _close_log_file(self):
+        """關閉當前日志文件"""
+        if self.log_file_handle is not None:
+            try:
+                self.log_file_handle.write(f"\n=== Episode End Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+                self.log_file_handle.close()
+                self.logger.info(f"已關閉日志文件: {self.current_log_file}")
+            except Exception as e:
+                self.logger.error(f"關閉日志文件時發生錯誤: {e}")
+            finally:
+                self.log_file_handle = None
+                self.current_log_file = None
+
+
+

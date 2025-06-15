@@ -26,7 +26,7 @@ def load_data(file_paths):
             all_data.append(processed_data)
     return all_data
 
-def smooth(y, alpha=0.1, sigma=2):
+def smooth(y, alpha=0.1, sigma=1):
     def exp_moving_average(y):
         ema = np.zeros_like(y)
         ema[0] = y[0]
@@ -146,14 +146,31 @@ file_paths = [
             #   'logs/run_20250504_235008/stats.json',
             #   'logs/run_20250504_190944/stats.json',
             #   'logs/run_20250504_221035/stats.json',
-            'Logs/DQN_I5_CPU/stats.json',
-            'Logs/DQN_R9_GPU/stats.json',
-            'Logs/DQN_R9_GPU_batch/stats.json',
+            # 'Logs/DQN_I5_CPU/stats.json',
+            # 'Logs/DQN_R9_GPU/stats.json',
+            # 'Logs/DQN_R9_GPU_batch/stats.json',
+            # 'logs/run_20250525_053819 batch1V1/stats.json',
+            # 'logs/run_20250526_011434/stats.json',
+            # 'logs/run_20250530_020837_3V3ALL/stats.json',
+            # 'logs/run_20250602_024744/stats.json',
+            # 'logs/run_20250602_053609/stats.json',
+            # 'logs/run_20250526_011434_3V3T16Batch/stats.json',
+            # 'logs/run_20250530_020837_3V3ALL/stats.json',
+            # 'logs/run_20250601_034044_3V3AllBatch/stats.json',
+            # "logs/run_20250602_152216/stats.json",
+            "logs/run_20250603_152052/stats.json",
+            "logs/run_20250603_233622/stats.json",
+            "logs/run_20250609_011406/stats.json",
+            "logs/run_20250604_110538/stats.json",
+            "logs/run_20250605_043932/stats.json",
+            "logs/run_20250608_001108/stats.json",
+            # "logs/run_20250608_093141/stats.json"
+            "logs/run_20250610_163204/stats.json"
               ]
 
 data_list = load_data(file_paths)
 # selected_keys = ['distance','episode_return','loss','best_distance','worker_loss','manager_loss','critic_loss']
-selected_keys = ['distance', 'loss', 'return']
+selected_keys = ['loss', 'episode_return','episode_step']
 name_list = [ 
                 # "NO_Reset",
                 # "CPU_4X",
@@ -169,12 +186,29 @@ name_list = [
                 # "bayesian",
                 # "FeUdal",
                 # "DRQN",
-                "DQN_I5_CPU",
-                "DQN_R9_GPU",
-                "DQN_R9_GPU_batch",
+                # "DQN_I5_CPU",
+                # "DQN_R9_GPU",
+                # "DQN_R9_GPU_batch",
+                # "1V1",
+                # "3V3",
+                # "GBRL",
+                # "GBRL+mixer",
+                # "GBRL+mixer+doubleQ",
+                # "T16B32",
+                # "ALL",
+                # "AllB32",
+                # "GBRL+Qmix joint_reward(sum)",
+                "GBRL Mixed_Reward",
+                # "GBRL+Qmix joint_reward(mean)",
+                # "GBRL+Qmix joint_reward(mean) 2",
+                # "GBRL joint_reward(mean) ",
+                # "GBRL joint_reward(mean) 2",
+                # "GBRL joint_reward(mean) 3",
+                # "GBRL Mixed_Reward No_DoubleQ",
+                "GBV2"
             ]
 
-battle_name = 'Model_1'
+battle_name = 'CMO 3V3'
 
 # 使用新的動態選擇窗口
 create_dynamic_window(data_list, selected_keys, name_list, battle_name)
