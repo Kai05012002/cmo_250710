@@ -15,7 +15,7 @@ from copy import deepcopy
 import logging
 
 # 导入FeUdal模型
-from scripts.FeUdal.FeUdal_agent import Feudal_ManagerAgent, Feudal_WorkerAgent, FeUdalCritic
+from module.agent.FeUdal_agent import Feudal_ManagerAgent, Feudal_WorkerAgent, FeUdalCritic
 
 class MyAgent(BaseAgent):
     def __init__(self, player_side: str, ac_name: str, target_name: str = None):

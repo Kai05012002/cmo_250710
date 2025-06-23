@@ -1,0 +1,789 @@
+{
+  "Scenario": {
+    "Title": "T3_C3",
+    "FileName": "T1_C1.scen",
+    "Time": "1745851308",
+    "StartTime": "1745812667",
+    "ZeroHour": "1745812667",
+    "Duration": "864000",
+    "SaveVersion": "Command: Modern Operations v1.07 - Build 1567.6",
+    "CampaignScore": "0",
+    "HasStarted": "true",
+    "Status": "Running",
+    "TimeCompression": "150",
+    "GameStatus": "0",
+    "Sides": {
+      "Side": [
+        {
+          "ID": "S06QFU-0HNC6133OU1TG",
+          "Name": "T",
+          "TotalScore": "0",
+          "Missions": null,
+          "Prof": null,
+          "Doctrine": null,
+          "Contacts": null
+        },
+        {
+          "ID": "S06QFU-0HNC6133OU1TI",
+          "Name": "C",
+          "TotalScore": "0",
+          "Missions": {
+            "Mission": {
+              "ID": "S06QFU-0HNC6133OUC7F",
+              "Name": "test",
+              "Type": "Patrol: 2",
+              "Subtype": "AAW Patrol",
+              "IsActive": "true",
+              "StartTime": "2025/4/28 上午 03:57:48",
+              "EndTime": "2025/5/7 上午 06:57:48",
+              "SISH": "false",
+              "UnitList": {
+                "Unit": "S06QFU-0HNC6133OUBMD"
+              }
+            }
+          },
+          "Prof": null,
+          "Doctrine": null,
+          "Contacts": {
+            "Contact": {
+              "ID": "XOW3RX-0HNCFUT81KOS1",
+              "Name": "target",
+              "Type": "Surface",
+              "CA": "0.0",
+              "CS": "0.0",
+              "Lat": "24.333113806906",
+              "Lon": "118.27954108343"
+            }
+          }
+        },
+        {
+          "ID": "XOW3RX-0HNCFUT817RVO",
+          "Name": "Target",
+          "TotalScore": "0",
+          "Missions": null,
+          "Prof": null,
+          "Doctrine": null,
+          "Contacts": null
+        }
+      ]
+    },
+    "ActiveUnits": {
+      "Ship": [
+        {
+          "ID": "S06QFU-0HNC6133OU1TJ",
+          "DBID": "649",
+          "Name": "1101 Cheng Kung [Perry Class, Kuang Hua I]",
+          "Side": "T",
+          "ClassName": "1101 Cheng Kung [Perry Class, Kuang Hua I]",
+          "Proficiency": "Regular",
+          "Lat": "23.578745387803",
+          "Lon": "119.41307176516",
+          "CA": "0.0",
+          "CH": "250.0",
+          "CS": "0.0",
+          "Thr": "FullStop: 0",
+          "FuelState": "None",
+          "WeaponState": "None",
+          "Mounts": {
+            "Mount": [
+              {
+                "ID": "S06QFU-0HNC6133OU1U7",
+                "DBID": "553",
+                "Name": "20mm/85 Mk15 Phalanx Blk 0 CIWS",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU1UA",
+                    "WeapID": "1702",
+                    "CL": "5",
+                    "ML": "5"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU1UF",
+                "DBID": "789",
+                "Name": "324mm Mk32 TT Triple",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU1UH",
+                    "WeapID": "1647",
+                    "CL": "3",
+                    "ML": "3"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU1UQ",
+                "DBID": "789",
+                "Name": "324mm Mk32 TT Triple",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU1US",
+                    "WeapID": "1647",
+                    "CL": "3",
+                    "ML": "3"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU1V5",
+                "DBID": "1770",
+                "Name": "40mm/70 Single Breda Type 564",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU1V7",
+                    "WeapID": "1177",
+                    "CL": "27",
+                    "ML": "27"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU1VC",
+                "DBID": "1770",
+                "Name": "40mm/70 Single Breda Type 564",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU1VE",
+                    "WeapID": "1177",
+                    "CL": "27",
+                    "ML": "27"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU1VJ",
+                "DBID": "550",
+                "Name": "76mm/62 OTO Melara Compact",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU1VL",
+                    "WeapID": "858",
+                    "CL": "20",
+                    "ML": "20"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU1VV",
+                "DBID": "1309",
+                "Name": "AN/SLQ-25A Nixie",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU201",
+                    "WeapID": "1066",
+                    "CL": "2",
+                    "ML": "2"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU205",
+                "DBID": "269",
+                "Name": "Hsiung Feng II Quad",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU207",
+                    "WeapID": "1934",
+                    "CL": "4",
+                    "ML": "4"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU20H",
+                "DBID": "1037",
+                "Name": "Hsiung Feng III Quad",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU20J",
+                    "WeapID": "1133",
+                    "CL": "4",
+                    "ML": "4"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU20S",
+                "DBID": "795",
+                "Name": "Kung Fen DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU20U",
+                    "WeapID": "1255",
+                    "CL": "16",
+                    "ML": "16"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU212",
+                "DBID": "795",
+                "Name": "Kung Fen DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU214",
+                    "WeapID": "1255",
+                    "CL": "16",
+                    "ML": "16"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU218",
+                "DBID": "795",
+                "Name": "Kung Fen DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU21A",
+                    "WeapID": "1255",
+                    "CL": "16",
+                    "ML": "16"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU21E",
+                "DBID": "795",
+                "Name": "Kung Fen DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OU21G",
+                    "WeapID": "1255",
+                    "CL": "16",
+                    "ML": "16"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OU21K",
+                "DBID": "609",
+                "Name": "Mk13 Mod 4 Single Rail",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": [
+                    {
+                      "ID": "S06QFU-0HNC6133OU21M",
+                      "WeapID": "844",
+                      "CL": "1",
+                      "ML": "1"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OU21U",
+                      "WeapID": "220",
+                      "CL": "0",
+                      "ML": "1"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "Fuel": {
+            "FuelRec": [
+              {
+                "FT": "2001",
+                "CQ": "64000.0",
+                "MQ": "64000"
+              },
+              {
+                "FT": "3003",
+                "CQ": "587000.0",
+                "MQ": "587000"
+              }
+            ]
+          }
+        },
+        {
+          "ID": "S06QFU-0HNC6133OUBMD",
+          "DBID": "4720",
+          "Name": "Type 056A Jiangdao II [593 Sanmenxia]",
+          "Side": "C",
+          "ClassName": "Type 056A Jiangdao II [593 Sanmenxia]",
+          "Proficiency": "Regular",
+          "Lat": "24.009891824376",
+          "Lon": "119.25001464203",
+          "CA": "0.0",
+          "CH": "235.83422851562",
+          "CS": "5.0",
+          "Thr": "Loiter: 1",
+          "FuelState": "None",
+          "WeaponState": "None",
+          "Mounts": {
+            "Mount": [
+              {
+                "ID": "S06QFU-0HNC6133OUBN3",
+                "DBID": "2461",
+                "Name": "30mm China H/PJ-17",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OUBN8",
+                    "WeapID": "2877",
+                    "CL": "30",
+                    "ML": "30"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBND",
+                "DBID": "2461",
+                "Name": "30mm China H/PJ-17",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OUBNI",
+                    "WeapID": "2877",
+                    "CL": "30",
+                    "ML": "30"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBNN",
+                "DBID": "2086",
+                "Name": "324mm B.515",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OUBNP",
+                    "WeapID": "534",
+                    "CL": "3",
+                    "ML": "3"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBO2",
+                "DBID": "2086",
+                "Name": "324mm B.515",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OUBO4",
+                    "WeapID": "534",
+                    "CL": "3",
+                    "ML": "3"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBOD",
+                "DBID": "2352",
+                "Name": "76mm/60 China H/PJ-26 Single",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": [
+                    {
+                      "ID": "S06QFU-0HNC6133OUBOG",
+                      "WeapID": "2772",
+                      "CL": "0",
+                      "ML": "75"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBOL",
+                      "WeapID": "2773",
+                      "CL": "75",
+                      "ML": "75"
+                    }
+                  ]
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBP4",
+                "DBID": "2230",
+                "Name": "China H/SJ-01-8 [Type 710, HQ-10]",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "S06QFU-0HNC6133OUBP6",
+                    "WeapID": "2603",
+                    "CL": "8",
+                    "ML": "8"
+                  }
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBPE",
+                "DBID": "4118",
+                "Name": "China Type 728-3 DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": [
+                    {
+                      "ID": "S06QFU-0HNC6133OUBPG",
+                      "WeapID": "1105",
+                      "CL": "6",
+                      "ML": "9"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBPK",
+                      "WeapID": "1350",
+                      "CL": "3",
+                      "ML": "9"
+                    }
+                  ]
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBPO",
+                "DBID": "4118",
+                "Name": "China Type 728-3 DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": [
+                    {
+                      "ID": "S06QFU-0HNC6133OUBPQ",
+                      "WeapID": "1105",
+                      "CL": "6",
+                      "ML": "9"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBPU",
+                      "WeapID": "1350",
+                      "CL": "3",
+                      "ML": "9"
+                    }
+                  ]
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBQ2",
+                "DBID": "4256",
+                "Name": "YJ-83B [C-802B] Twin",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": [
+                    {
+                      "ID": "S06QFU-0HNC6133OUBQ4",
+                      "WeapID": "4392",
+                      "CL": "1",
+                      "ML": "2"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBQD",
+                      "WeapID": "4415",
+                      "CL": "0",
+                      "ML": "2"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBQL",
+                      "WeapID": "541",
+                      "CL": "0",
+                      "ML": "2"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBQU",
+                      "WeapID": "4490",
+                      "CL": "1",
+                      "ML": "2"
+                    }
+                  ]
+                }
+              },
+              {
+                "ID": "S06QFU-0HNC6133OUBR5",
+                "DBID": "4256",
+                "Name": "YJ-83B [C-802B] Twin",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": [
+                    {
+                      "ID": "S06QFU-0HNC6133OUBR7",
+                      "WeapID": "4392",
+                      "CL": "1",
+                      "ML": "2"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBRG",
+                      "WeapID": "4415",
+                      "CL": "0",
+                      "ML": "2"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBRO",
+                      "WeapID": "541",
+                      "CL": "0",
+                      "ML": "2"
+                    },
+                    {
+                      "ID": "S06QFU-0HNC6133OUBS1",
+                      "WeapID": "4490",
+                      "CL": "1",
+                      "ML": "2"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "Fuel": {
+            "FuelRec": [
+              {
+                "FT": "2001",
+                "CQ": "8500.0",
+                "MQ": "8500"
+              },
+              {
+                "FT": "3001",
+                "CQ": "12970.479492188",
+                "MQ": "13125"
+              }
+            ]
+          }
+        },
+        {
+          "ID": "XOW3RX-0HNCFUT817SBQ",
+          "DBID": "104",
+          "Name": "target",
+          "Side": "Target",
+          "ClassName": "1101 Cheng Kung [Perry Class, Kuang Hua I]",
+          "Proficiency": "Regular",
+          "Lat": "24.333113806906",
+          "Lon": "118.27954108343",
+          "CA": "0.0",
+          "CH": "0.0",
+          "CS": "0.0",
+          "Thr": "FullStop: 0",
+          "FuelState": "None",
+          "WeaponState": "None",
+          "Mounts": {
+            "Mount": [
+              {
+                "ID": "XOW3RX-0HNCFUT817SCE",
+                "DBID": "553",
+                "Name": "20mm/85 Mk15 Phalanx Blk 0 CIWS",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SCH",
+                    "WeapID": "1702",
+                    "CL": "5",
+                    "ML": "5"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SCM",
+                "DBID": "789",
+                "Name": "324mm Mk32 TT Triple",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SCO",
+                    "WeapID": "1647",
+                    "CL": "3",
+                    "ML": "3"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SD1",
+                "DBID": "789",
+                "Name": "324mm Mk32 TT Triple",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SD3",
+                    "WeapID": "1647",
+                    "CL": "3",
+                    "ML": "3"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SDC",
+                "DBID": "1770",
+                "Name": "40mm/70 Single Breda Type 564",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SDE",
+                    "WeapID": "1177",
+                    "CL": "27",
+                    "ML": "27"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SDJ",
+                "DBID": "1770",
+                "Name": "40mm/70 Single Breda Type 564",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SDL",
+                    "WeapID": "1177",
+                    "CL": "27",
+                    "ML": "27"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SDQ",
+                "DBID": "550",
+                "Name": "76mm/62 OTO Melara Compact",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SDS",
+                    "WeapID": "858",
+                    "CL": "20",
+                    "ML": "20"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SE6",
+                "DBID": "1308",
+                "Name": "AN/SLQ-25 Nixie",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SE8",
+                    "WeapID": "1068",
+                    "CL": "2",
+                    "ML": "2"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SEC",
+                "DBID": "269",
+                "Name": "Hsiung Feng II Quad",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SEE",
+                    "WeapID": "1934",
+                    "CL": "4",
+                    "ML": "4"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SEO",
+                "DBID": "269",
+                "Name": "Hsiung Feng II Quad",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SEQ",
+                    "WeapID": "1934",
+                    "CL": "4",
+                    "ML": "4"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SF4",
+                "DBID": "795",
+                "Name": "Kung Fen DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SF6",
+                    "WeapID": "1255",
+                    "CL": "16",
+                    "ML": "16"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SFA",
+                "DBID": "795",
+                "Name": "Kung Fen DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SFC",
+                    "WeapID": "1255",
+                    "CL": "16",
+                    "ML": "16"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SFG",
+                "DBID": "795",
+                "Name": "Kung Fen DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SFI",
+                    "WeapID": "1255",
+                    "CL": "16",
+                    "ML": "16"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SFM",
+                "DBID": "795",
+                "Name": "Kung Fen DL",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": {
+                    "ID": "XOW3RX-0HNCFUT817SFO",
+                    "WeapID": "1255",
+                    "CL": "16",
+                    "ML": "16"
+                  }
+                }
+              },
+              {
+                "ID": "XOW3RX-0HNCFUT817SFS",
+                "DBID": "270",
+                "Name": "Mk13 Mod 4 Single Rail",
+                "MountStatus": "Operational",
+                "MW": {
+                  "WRec": [
+                    {
+                      "ID": "XOW3RX-0HNCFUT817SFU",
+                      "WeapID": "237",
+                      "CL": "1",
+                      "ML": "1"
+                    },
+                    {
+                      "ID": "XOW3RX-0HNCFUT817SG6",
+                      "WeapID": "220",
+                      "CL": "0",
+                      "ML": "1"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "Fuel": {
+            "FuelRec": [
+              {
+                "FT": "2001",
+                "CQ": "64000.0",
+                "MQ": "64000"
+              },
+              {
+                "FT": "3003",
+                "CQ": "587000.0",
+                "MQ": "587000"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

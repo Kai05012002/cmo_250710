@@ -15,7 +15,7 @@ from copy import deepcopy
 import logging
 
 # 导入FeUdal模型
-from scripts.MyNet_episode.my_agent import my_Agent
+from module.agent.GB_agent import my_Agent
 
 
 class ReplayBuffer:
