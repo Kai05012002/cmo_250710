@@ -7,7 +7,7 @@ import os
 import logging
 logging.basicConfig(level=logging.INFO)
 
-from sample_agent import MyAgent1
+from scripts.GAT3V3.sample_agent import MyAgent1
 
 from pycmo.configs.config import get_config
 from pycmo.env.cmo_env import CMOEnv

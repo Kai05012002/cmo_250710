@@ -158,14 +158,20 @@ file_paths = [
             # 'logs/run_20250530_020837_3V3ALL/stats.json',
             # 'logs/run_20250601_034044_3V3AllBatch/stats.json',
             # "logs/run_20250602_152216/stats.json",
-            "logs/run_20250603_152052/stats.json",
-            "logs/run_20250603_233622/stats.json",
-            "logs/run_20250609_011406/stats.json",
-            "logs/run_20250604_110538/stats.json",
-            "logs/run_20250605_043932/stats.json",
-            "logs/run_20250608_001108/stats.json",
+            #"pycmopen/logs/run_20250624_161500/stats.json", #33(OK)
+            #"pycmopen/logs/run_20250702_024705/stats.json",
+            #"pycmopen/logs/run_20250630_175703/stats.json",
+            #"pycmopen/logs/run_20250703_145055/stats.json",
+            #"pycmopen/logs/run_20250702_024705/stats.json",
+            #"pycmopen/logs/run_20250707_233854/stats.json",
+            "pycmopen/logs/run_20250709_230603/stats.json",
+            # "logs/run_20250603_233622/stats.json",
+            # "logs/run_20250609_011406/stats.json",
+            # "logs/run_20250604_110538/stats.json",
+            # "logs/run_20250605_043932/stats.json",
+            # "logs/run_20250608_001108/stats.json",
             # "logs/run_20250608_093141/stats.json"
-            "logs/run_20250610_163204/stats.json"
+            # "logs/run_20250610_163204/stats.json"
               ]
 
 data_list = load_data(file_paths)
@@ -198,17 +204,21 @@ name_list = [
                 # "ALL",
                 # "AllB32",
                 # "GBRL+Qmix joint_reward(sum)",
-                "GBRL Mixed_Reward",
+                #"GBRL Mixed_Reward",
+                #"GAT_7V7_old(long time)",
                 # "GBRL+Qmix joint_reward(mean)",
                 # "GBRL+Qmix joint_reward(mean) 2",
                 # "GBRL joint_reward(mean) ",
                 # "GBRL joint_reward(mean) 2",
                 # "GBRL joint_reward(mean) 3",
                 # "GBRL Mixed_Reward No_DoubleQ",
-                "GBV2"
+                #"GAT_7V7_new(2day)",
+                #"GAT_7V7_old(2day)",
+                #"GAT_7V7_new(longtime)"
+                "GAT_7V7"
             ]
 
-battle_name = 'CMO 3V3'
+battle_name = 'CMO 7V7'
 
 # 使用新的動態選擇窗口
 create_dynamic_window(data_list, selected_keys, name_list, battle_name)

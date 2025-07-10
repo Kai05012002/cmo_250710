@@ -1,0 +1,10 @@
+# config.yaml
+scenario_name: "7_VS_7"
+player_side: "T"
+scenario_script_folder_name: "GAT3V3"
+debug_mode: false
+agent:
+  ac_name: "1101 Cheng Kung [Perry Class, Kuang Hua I]"
+  target_name: "target"
+  
+#python .\scripts\GAT7V7\demo.py --config=scripts/GAT7V7/config.yaml

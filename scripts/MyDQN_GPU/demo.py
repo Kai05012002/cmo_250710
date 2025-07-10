@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 logging.basicConfig(level=logging.INFO)
 
-from sample_agent import MyAgent
+from scripts.GAT3V3.sample_agent import MyAgent
 from pycmo.configs.config import get_config
 from pycmo.env.cmo_env import CMOEnv
 from pycmo.lib.protocol import SteamClientProps

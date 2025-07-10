@@ -22,6 +22,7 @@ import logging
 # 导入模型
 from module.batch_agent.GBV15_agent import my_Agent
 # from module.batch_agent.GBV2_agent import GB_Belief_Agent, GB_Worker_Agent, GB_Belief_Critic
+from module.batch_agent.GAT_agent import CenterGAT_QNet
 from module.batch_agent.FeUdal_agent import Feudal_ManagerAgent, Feudal_WorkerAgent, FeUdalCritic
 from module.batch_agent.DRQN_agent import RNN_Agent
 from module.batch_agent.DQN_agent import DQN_Agent
@@ -116,7 +117,7 @@ class MyAgent(BaseAgent):
         # 初始化 Mylib 並傳入 self
         self.mylib = Mylib(self)
 
-        self.agent_type = 'GBV15'  # 'GBV15', 'GBV2', 'Feudal', 'DRQN', 'DQN'
+        self.agent_type = 'GAT' #'GBV15','GBV15', 'GBV2', 'Feudal', 'DRQN', 'DQN'
         self.enable_mixer = False
         self.enable_double_q = True
         self.enable_on_policy = True
@@ -231,7 +232,26 @@ class MyAgent(BaseAgent):
             self.rnn_agent = RNN_Agent(self.input_size, self.args).to(self.device)
         elif self.agent_type == 'DQN':
             self.dqn_agent = DQN_Agent(self.input_size, self.args).to(self.device)
+        elif self.agent_type == 'GAT':
+            # --- GAT 相關超參數 ---
+            self.node_dim   = 33             # 29 local + type(1) + id(3)
+            self.edge_dim   = 1
+            self.embed_dim  = 128
+            self.n_actions  = 4              # 你的動作數 (前進/左/右/打)
+            self.gat_layers = 3
 
+            # --- 建圖網路 ---
+            self.gat_net = CenterGAT_QNet(
+                    in_dim    = self.node_dim,   # == 31
+                    hid_dim   = self.embed_dim,  # 128
+                    n_layers  = self.gat_layers, # 3
+                    n_actions = self.n_actions,   # 4
+                    edge_dim  = self.node_dim     # 33
+            ).to(self.device)
+
+            self.gat_target = deepcopy(self.gat_net)
+            self.gat_target.eval()
+            self.optimizer  = torch.optim.Adam(self.gat_net.parameters(), lr=self.lr)
 
         # 初始化 QMIX 混合網路
         if self.enable_mixer:
@@ -298,9 +318,14 @@ class MyAgent(BaseAgent):
     def _load_checkpoint(self, path: str):
         """內部使用：從 path 載入模型、optimizer、epsilon、steps"""
         ckpt = torch.load(path, map_location=self.device)
-        self.my_agent.load_state_dict(ckpt['model'])
-        self.target_my_agent.load_state_dict(ckpt['target_model'])
-        self.optimizer.load_state_dict(ckpt['optimizer'])
+        if ckpt.get('agent_type') == 'GAT':
+            self.gat_net.load_state_dict(ckpt['gat_net'])
+            self.gat_target.load_state_dict(ckpt['gat_target'])
+            self.optimizer.load_state_dict(ckpt['optimizer'])
+        else:   # 其他
+            self.my_agent.load_state_dict(ckpt['model'])
+            self.target_my_agent.load_state_dict(ckpt['target_model'])
+            self.optimizer.load_state_dict(ckpt['optimizer'])
         # 有存就還原，沒有就保留原本初始化的值
         self.epsilon = ckpt.get('epsilon', self.epsilon)
         self.total_steps   = ckpt.get('total_steps',   self.total_steps)
@@ -327,6 +352,10 @@ class MyAgent(BaseAgent):
                 ckpt['model'] = self.my_agent.state_dict()
                 ckpt['target_model'] = self.target_my_agent.state_dict()
                 ckpt['optimizer'] = self.optimizer.state_dict()
+            if self.agent_type == 'GAT':
+                ckpt['gat_net']    = self.gat_net.state_dict()
+                ckpt['gat_target'] = self.gat_target.state_dict()
+                ckpt['optimizer']  = self.optimizer.state_dict()
             if self.enable_mixer:
                 ckpt['mixer'] = self.mixer.state_dict()
                 ckpt['target_mixer'] = self.target_mixer.state_dict()
@@ -355,6 +384,48 @@ class MyAgent(BaseAgent):
                 return contact
         return None
 
+    # -------------------------------------------------------
+    #  Graph 前處理：把 CMO observation 轉成 (Xl, El)
+    # -------------------------------------------------------
+    def obs_to_Xl_El(self, features: Multi_Side_FeaturesFromSteam):
+        """
+        產生：
+            Xl: (6, 31)  = [local 29 | type 1 | id 3]
+            El: (6, 6, 1)= visibility 0/1
+        固定索引：0~2 友軍，3~5 敵軍
+        """
+        X_rows, units_all = [], []
+
+        # ---------- 友軍 ----------
+        for idx, name in enumerate(self.friendly_info.order):
+            u = self.get_unit_info_from_observation(features, self.player_side, name)
+            units_all.append(u)
+            local29 = self.get_state(features, u)[:29] if u is not None else np.zeros(29, np.float32)
+            one_hot = [1,0,0] if idx==0 else [0,1,0] if idx==1 else [0,0,1]
+            X_rows.append(np.concatenate([local29, [0], one_hot]))   # type=0
+
+        # ---------- 敵軍 ----------
+        for name in self.enemy_info.order:
+            u = self.get_unit_info_from_observation(features, self.enemy_side, name)
+            units_all.append(u)
+            local29 = np.zeros(29, np.float32)   # 暫不需要敵方 local
+            X_rows.append(np.concatenate([local29, [1], [0,0,0]]))   # type=1
+
+        Xl = torch.tensor(X_rows, dtype=torch.float32, device=self.device)   # (6,31)
+
+        # ---------- visibility edge ----------
+        vis = np.zeros((6, 6, self.node_dim), dtype=np.float32)  # 33 instead of 1
+        for i, friendly in enumerate(units_all[:3]):
+            if friendly is None:
+                continue
+            for c in features.contacts[self.player_side]:
+                if c['Name'] in self.enemy_info.order:
+                    j = 3 + self.enemy_info.order.index(c['Name'])
+                    vis[i, j, :] = 1.0        # 整條 33-dim 向量都設 1
+        El = torch.tensor(vis, dtype=torch.float32, device=self.device)
+        return Xl, El
+
+    
     def get_done(self,state: list[np.ndarray]):
         # 跳過第一步的 done 檢測，避免場景尚未更新時誤判
         if self.episode_step == 0:
@@ -437,8 +508,19 @@ class MyAgent(BaseAgent):
             # 計算並記錄全域狀態
             prev_global_state = self.get_global_state(self.last_features, self.prev_state)
             current_global_state = self.get_global_state(features, current_state)
-            self.episode_memory.append((self.prev_state, prev_global_state, current_state, current_global_state, self.prev_action, rewards, self.done, self.alive))
-            
+            #self.episode_memory.append((self.prev_state, prev_global_state, current_state, current_global_state, self.prev_action, rewards, self.done, self.alive))
+            # 先把目前觀測轉成 graph
+            Xl_now, El_now   = self.obs_to_Xl_El(features)
+            Xl_prev, El_prev = self.obs_to_Xl_El(self.last_features) if self.last_features is not None else (Xl_now, El_now)
+
+            self.episode_memory.append((
+                    Xl_prev.cpu(), El_prev.cpu(),        # t
+                    self.prev_action,                              # a_t (list[int] 長度3)
+                    rewards,                             # r_t (list[float] 長度3)
+                    Xl_now.cpu(), El_now.cpu(),          # t+1
+                    self.done                            # done_t
+            ))
+
             # 檢查遊戲是否結束
             if self.done or self.episode_step > self.max_episode_steps:
                 self.episode_done = True
@@ -518,6 +600,11 @@ class MyAgent(BaseAgent):
                 q_values, self.rnn_agent_hidden = self.rnn_agent(state_tensor, self.rnn_agent_hidden)
             elif self.agent_type == 'DQN':
                 q_values = self.dqn_agent(state_tensor)
+            elif self.agent_type == 'GAT':
+                Xl, El = self.obs_to_Xl_El(features)        # (6,31), (6,6,1)
+                q_all  = self.gat_net(Xl, El)              # (6, n_actions)
+                q_values = q_all.unsqueeze(0).unsqueeze(0) # → [T=1, B=1, 6, n_actions]
+
 
         dt_rl = time.perf_counter() - t0_rl
         # self.step_times_rl.append(dt_rl)
@@ -529,15 +616,39 @@ class MyAgent(BaseAgent):
 
         # q_values shape: [T, B, A, n_actions]
         # 取出第一個時間步＆batch
-        q_vals = q_values[0, 0]            # shape [A, n_actions]
-        A, n_actions = q_vals.shape
-        # 產生 action_mask: 限制在以目標點為左上角，邊長 self.max_distance 的正方形內行動
-        masks = []
+        #q_vals = q_values[0, 0]            # shape [A, n_actions]
+        #A, n_actions = q_vals.shape
+        # 取 3 艘友軍的 Q 值
+        # 只保留友軍 3 節點的 Q 值
+        q_vals = q_all[: self.args.n_agents]  # (3, n_actions)
+
+        # ── 選動作（下面的全用 A = 3）────────────────────
+        A, n_actions = q_vals.shape           # A = 3
+        # ─── ε-greedy 選動作 ───────────────────────────────
+        masks, actions = [], []
         for i in range(A):
+            mask = torch.ones(n_actions, dtype=torch.bool, device=self.device)
+            mount_ratio = current_state[i][5]
+            if not has_enemy or mount_ratio <= 0:
+                mask[3] = False
+            masks.append(mask)
+
+            if random.random() < self.epsilon:
+                allowed = mask.nonzero(as_tuple=False).squeeze(-1).tolist()
+                act = random.choice(allowed) if allowed else 0
+            else:
+                q_masked = q_vals[i].clone()
+                q_masked[~mask] = -float('inf')
+                act = int(q_masked.argmax())
+            actions.append(act)
+
+        # 產生 action_mask: 限制在以目標點為左上角，邊長 self.max_distance 的正方形內行動
+        #masks = []
+        #for i in range(A):
             # 從當前狀態列表取得第 i 個 agent 的 dx_norm, dy_norm
             # dx = current_state[i][0] * self.max_distance
             # dy = current_state[i][1] * self.max_distance
-            mask = torch.ones(n_actions, dtype=torch.bool, device=self.device)
+            #mask = torch.ones(n_actions, dtype=torch.bool, device=self.device)
             # # 上邊界: dy <= 0 無法再向北
             # if dy <= 0:
             #     mask[0] = False
@@ -551,13 +662,13 @@ class MyAgent(BaseAgent):
             # if dx <= -self.max_distance:
             #     mask[3] = False
             # 無敵人時禁止攻擊
-            if not has_enemy:
-                mask[3] = False
+            #if not has_enemy:
+                #mask[3] = False
             # 無彈藥時禁止攻擊
-            mount_ratio = current_state[i][5]
-            if mount_ratio <= 0:
-                mask[3] = False
-            masks.append(mask)
+            #mount_ratio = current_state[i][5]
+            #if mount_ratio <= 0:
+                #mask[3] = False
+            #masks.append(mask)
         actions = []
         action_cmd = ""
 
@@ -631,6 +742,8 @@ class MyAgent(BaseAgent):
             # 同步 GBV2 worker 目標網路
             if self.agent_type == 'GBV2':
                 self.target_worker_agent.load_state_dict(self.worker_agent.state_dict())
+            if self.agent_type == 'GAT':
+                self.gat_target.load_state_dict(self.gat_net.state_dict())
         
         # 儲存模型
         self._save_checkpoint(self.checkpoint_dir)
@@ -1050,6 +1163,9 @@ class MyAgent(BaseAgent):
         if len(self.completed_episodes) < 1:
             self.logger.warning("沒有足夠的episodes進行訓練")
             return
+        if self.agent_type == 'GAT':
+            # 直接走 GAT 專屬函式，不要先解包
+            return self.GAT_train()
         if self.enable_on_policy:
             # 使用最新的episode
             episode = self.completed_episodes[-1]
@@ -1078,10 +1194,67 @@ class MyAgent(BaseAgent):
         elif self.agent_type == 'GBV2':
             loss = self.GBV2_train(states, next_states, actions_tensor, rewards_tensor, dones_tensor, global_states, next_global_states)
             return loss
+        elif self.agent_type == 'GAT':
+            return self.GAT_train()
+
         # big loss check
         # self.big_loss_check(loss)
 
-        
+    # -------------------------------------------------------
+    #  GAT + multi-head DQN 訓練 
+    # -------------------------------------------------------
+    def GAT_train(self):
+        """
+        用 self.completed_episodes[-1] 做 on-policy，和原 sample_agent 同批次流程：
+        T = episode 長度, A = 3, n_act = 4
+        """
+        ep = self.completed_episodes[-1]
+        T = len(ep)
+
+        # -------- 解析 episode --------
+        Xl_list, El_list  = [], []
+        next_Xl_list, next_El_list = [], []
+        act_list, rew_list, done_list = [], [], []
+
+        for (Xl, El, a, r, Xl_n, El_n, d) in ep:
+            Xl_list.append( Xl );  El_list.append( El )
+            next_Xl_list.append( Xl_n );  next_El_list.append( El_n )
+            act_list.append( a );  rew_list.append( r );  done_list.append( d )
+
+        # 堆成 tensor
+        Xl      = torch.stack(Xl_list , dim=0).to(self.device)          # [T, 6,31]
+        El      = torch.stack(El_list , dim=0).to(self.device)          # [T, 6,6,1]
+        Xl_next = torch.stack(next_Xl_list, dim=0).to(self.device)
+        El_next = torch.stack(next_El_list, dim=0).to(self.device)
+
+        actions = torch.tensor(act_list , dtype=torch.long , device=self.device) # [T,3]
+        rewards = torch.tensor(rew_list , dtype=torch.float32, device=self.device) # [T,3]
+        dones   = torch.tensor(done_list, dtype=torch.float32, device=self.device).unsqueeze(-1) # [T,1]
+
+       # ---- Q(s,a) ----------------------------------------------------
+        #  Xl : [T, 6, 33]   El : [T, 6, 6, 33]
+        Q_all  = self.gat_net(Xl,El)     # [T, 6, n_act]
+        Q_next = self.gat_target(Xl_next, El_next).detach()
+        Q_friendly      = Q_all [:,:3]   # [T,3,n_act]
+        Q_next_friend   = Q_next[:,:3]
+
+        # 取 a_t
+        Q_taken = Q_friendly.gather(2, actions.unsqueeze(-1)).squeeze(-1)   # [T,3]
+
+        # Double-DQN
+        with torch.no_grad():
+            best_next = Q_friendly.max(dim=2, keepdim=True)[1]
+            max_next  = Q_next_friend.gather(2, best_next).squeeze(-1)       # [T,3]
+
+        td_target = rewards + (1 - dones) * self.gamma * max_next            # [T,3]
+        loss = F.smooth_l1_loss(Q_taken, td_target)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.gat_net.parameters(), 5)
+        self.optimizer.step()
+        return loss.item()
+
 
     def train_batch_test(self):
         valid_eps = [ep for ep in self.completed_episodes if len(ep) >= self.sequence_len]
